@@ -32,3 +32,7 @@ https://github.com/interactiveaudiolab/nussl
 7. Sanjeel Parekh, Slim Essid, Alexey Ozerov, Ngoc Q. K. Duong, Patrick Pérez, Gaël Richard. Weakly Supervised Representation Learning for Unsynchronized Audio-Visual Events
 
 ## Roadmap
+
+## Paper link
+
+https://www.overleaf.com/17504652wxkdwdbjpvry
