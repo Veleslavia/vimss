@@ -1,5 +1,6 @@
 from sacred import Experiment
 import tensorflow as tf
+from tensorflow.contrib import tpu
 import numpy as np
 import os
 
@@ -15,19 +16,22 @@ import Evaluate
 
 import functools
 from tensorflow.contrib.signal.python.ops import window_ops
+from tensorflow.contrib.cluster_resolver import TPUClusterResolver
 
 ex = Experiment('Waveunet')
 
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path" : "/home/daniel/Datasets/MUSDB18", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
-                    "estimates_path" : "/mnt/windaten/Source_Estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
+    model_config = {"musdb_path": "gs://vimssdatasets/Musdb", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN
+                    # CCMixter.xml
+                    "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
+                    # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
 
-                    "model_base_dir" : "checkpoints", # Base folder for model checkpoints
-                    "log_dir" : "logs", # Base folder for logs files
-                    "batch_size" : 16, # Batch size
-                    "init_sup_sep_lr" : 1e-4, # Supervised separator learning rate
+                    "model_base_dir": "checkpoints", # Base folder for model checkpoints
+                    "log_dir": "logs", # Base folder for logs files
+                    "batch_size": 16, # Batch size
+                    "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
@@ -118,7 +122,8 @@ def full_multi_instrument():
 @ex.named_config
 def baseline_comparison():
     model_config = {
-        "batch_size": 4, # Less output since model is so big. Doesn't matter since the model's output is not dependent on its output or input size (only convolutions)
+        "batch_size": 4, # Less output since model is so big.
+        # Doesn't matter since the model's output is not dependent on its output or input size (only convolutions)
         "cache_size": 4,
         "min_replacement_rate" : 4,
 
@@ -237,6 +242,7 @@ def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_mod
     with tf.control_dependencies(update_ops):
         with tf.variable_scope("separator_solver"):
             separator_solver = tf.train.AdamOptimizer(learning_rate=sep_lr).minimize(separator_loss, var_list=separator_vars)
+            separator_solver = tf.contrib.tpu.CrossShardOptimizer(separator_solver)
 
     # SUMMARAIES
     tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
@@ -244,10 +250,16 @@ def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_mod
 
     # Start session and queue input threads
     config = tf.ConfigProto()
-    config.gpu_options.allow_growth=True
-    sess = tf.Session(config=config)
+
+    tpu_grpc_url = TPUClusterResolver(
+        tpu=[os.environ['TPU_NAME']]).get_master()
+
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(target=tpu_grpc_url, config=config)
+    sess.run(tpu.initialize_system())
     sess.run(tf.global_variables_initializer())
-    writer = tf.summary.FileWriter(model_config["log_dir"] + os.path.sep + str(experiment_id),graph=sess.graph)
+
+    writer = tf.summary.FileWriter(model_config["log_dir"] + os.path.sep + str(experiment_id), graph=sess.graph)
 
     # CHECKPOINTING
     # Load pretrained model to continue training, if we are supposed to
