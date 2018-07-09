@@ -9,7 +9,6 @@ import tensorflow as tf
 # import soundfile as sf
 
 import librosa
-
 from google.cloud import storage
 
 
@@ -119,7 +118,7 @@ def _get_segments_from_audio_cache(file_data_cache):
     return segments
 
 
-def _process_audio_files_batch(chunk_files, coder, output_file):
+def _process_audio_files_batch(chunk_files, output_file):
     """Processes and saves list of audio files as TFRecords.
     Args:
         chunk_files: list of strings; each string is a path to an image file
