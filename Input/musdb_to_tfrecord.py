@@ -17,7 +17,7 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     'gcs_output_path', 'gs://vimsstfrecords/musdb18', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
-    'local_scratch_dir', '/tmp', 'Scratch directory path for temporary files.')
+    'local_scratch_dir', '/mnt/disks/vimsstmp/tfrecords', 'Scratch directory path for temporary files.')
 flags.DEFINE_string(
     'raw_data_dir', '/mnt/disks/vimsstmp/musdb18', 'Directory path for raw MUSDB dataset. '
     'Should have train and test subdirectories inside it.')
@@ -243,7 +243,7 @@ def upload_to_gcs(training_records, test_records):
         for i, filename in enumerate(sorted(filenames)):
             blob = bucket.blob(key_prefix + os.path.basename(filename))
             blob.upload_from_filename(filename)
-            if not i % 20:
+            if not i % 5:
                 tf.logging.info('Finished uploading file: %s' % filename)
 
     # Upload training dataset
