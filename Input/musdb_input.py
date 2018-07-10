@@ -86,8 +86,9 @@ class MusDBInput(object):
         }
 
         parsed = tf.parse_single_example(value, keys_to_features)
-        audio_data = tf.reshape(parsed['audio/encoded'], shape=[])
-        audio_data = tf.reshape(audio_data, [NUM_SOURCES+1, NUM_SAMPLES])
+        audio_data = tf.decode_raw(parsed['audio/encoded'], tf.float32)
+        #audio_data = tf.reshape(parsed['audio/encoded'], shape=[])
+        audio_data = tf.reshape(audio_data, tf.stack([NUM_SOURCES+1, NUM_SAMPLES]))
 
         return audio_data
 
