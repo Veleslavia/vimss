@@ -7,6 +7,7 @@ import os
 import Datasets
 from Input import Input as Input
 from Input import batchgenerators as batchgen
+from Input import musdb_input
 import Utils
 import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
@@ -23,11 +24,10 @@ ex = Experiment('Waveunet')
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path": "gs://vimssdatasets/Musdb", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN
+    model_config = {"musdb_path": "gs://vimsstfrecords/musdb18", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN
                     # CCMixter.xml
                     "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-
                     "model_base_dir": "checkpoints", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 16, # Batch size
@@ -191,30 +191,27 @@ def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_mod
     separator_func = separator_class.get_output
 
     # Creating the batch generators
-    assert((sep_input_shape[1] - sep_output_shape[1]) % 2 == 0)
-    pad_durations = np.array([float((sep_input_shape[1] - sep_output_shape[1])/2), 0, 0]) / float(model_config["expected_sr"])  # Input context that the input audio has to be padded ON EACH SIDE
-    sup_batch_gen = batchgen.BatchGen_Paired(
-        model_config,
-        sup_dataset,
-        sep_input_shape,
-        sep_output_shape,
-        pad_durations[0]
-    )
+    # TODO rewrite this part to use pre-processed tf.records (with fixed input size)
 
-    print("Starting worker")
-    sup_batch_gen.start_workers()
-    print("Started worker!")
+    print("Creating datasets")
+    musdb_train, musdb_eval = [musdb_input.MusDBInput(
+        is_training=is_training,
+        data_dir=model_config['musdb_path'],
+        transpose_input=False,
+        use_bfloat16=False) for is_training in [True, False]]
 
     # Placeholders and input normalisation
-    mix_context, sources = Input.get_multitrack_placeholders(sep_output_shape, model_config["num_sources"], sep_input_shape, "sup")
-    mix = Utils.crop(mix_context, sep_output_shape)
+    # mix_context, sources = Input.get_multitrack_placeholders(sep_output_shape, model_config["num_sources"],
+    # sep_input_shape, "sup")
+    # mix = Utils.crop(mix_context, sep_output_shape)
 
     print("Training...")
 
     # BUILD MODELS
     # Separator
-    separator_sources = separator_func(mix_context, True, not model_config["raw_audio_loss"], reuse=False) # Sources are output in order [acc, voice] for voice separation, [bass, drums, other, vocals] for multi-instrument separation
-
+    # input: Input batch of mixtures, 3D tensor [batch_size, num_samples, num_channels]
+    # Sources are output in order [acc, voice] for voice separation, [bass, drums, other, vocals] for multi-instrument separation
+    separator_sources = separator_func(mix_context, True, not model_config["raw_audio_loss"], reuse=False)
     # Supervised objective: MSE in log-normalized magnitude space
     separator_loss = 0
     for (real_source, sep_source) in zip(sources, separator_sources):
