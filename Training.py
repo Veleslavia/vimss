@@ -193,13 +193,6 @@ def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_mod
     # Creating the batch generators
     # TODO rewrite this part to use pre-processed tf.records (with fixed input size)
 
-    print("Creating datasets")
-    musdb_train, musdb_eval = [musdb_input.MusDBInput(
-        is_training=is_training,
-        data_dir=model_config['musdb_path'],
-        transpose_input=False,
-        use_bfloat16=False) for is_training in [True, False]]
-
     # Placeholders and input normalisation
     # mix_context, sources = Input.get_multitrack_placeholders(sep_output_shape, model_config["num_sources"],
     # sep_input_shape, "sup")
@@ -215,14 +208,14 @@ def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_mod
     # Supervised objective: MSE in log-normalized magnitude space
     separator_loss = 0
     for (real_source, sep_source) in zip(sources, separator_sources):
-        if model_config["network"] == "unet_spectrogram" and not model_config["raw_audio_loss"]:
-            window = functools.partial(window_ops.hann_window, periodic=True)
-            stfts = tf.contrib.signal.stft(tf.squeeze(real_source, 2), frame_length=1024, frame_step=768,
-                                           fft_length=1024, window_fn=window)
-            real_mag = tf.abs(stfts)
-            separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source))
-        else:
-            separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
+        #if model_config["network"] == "unet_spectrogram" and not model_config["raw_audio_loss"]:
+        #    window = functools.partial(window_ops.hann_window, periodic=True)
+        #    stfts = tf.contrib.signal.stft(tf.squeeze(real_source, 2), frame_length=1024, frame_step=768,
+        #                                   fft_length=1024, window_fn=window)
+        #    real_mag = tf.abs(stfts)
+        #    separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source))
+        #else:
+        separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
     separator_loss = separator_loss / float(len(sources)) # Normalise by number of sources
 
     # TRAINING CONTROL VARIABLES
@@ -315,10 +308,11 @@ def optimise(model_config, experiment_id, dataset):
             model_config["cache_size"] *= 2
             model_config["min_replacement_rate"] *= 2
             model_config["init_sup_sep_lr"] = 1e-5
-        while worse_epochs < 20: # Early stopping on validation set after a few epochs
+        while worse_epochs < 20:    # Early stopping on validation set after a few epochs
             print("EPOCH: " + str(epoch))
-            model_path = train(sup_dataset=dataset["train_sup"], load_model=model_path)
-            curr_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=dataset["train_sup"], load_model=model_path)
+            musdb_train, musdb_eval = dataset[0], dataset[1]
+            model_path = train(sup_dataset=musdb_train, load_model=model_path)
+            curr_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=musdb_eval, load_model=model_path)
             epoch += 1
             if curr_loss < best_loss:
                 worse_epochs = 0
@@ -329,7 +323,7 @@ def optimise(model_config, experiment_id, dataset):
                 worse_epochs += 1
                 print("Performance on validation set worsened to " + str(curr_loss))
     print("TRAINING FINISHED - TESTING WITH BEST MODEL " + best_model_path)
-    test_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=dataset["test"], load_model=best_model_path)
+    test_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=musdb_eval, load_model=best_model_path)
     return best_model_path, test_loss
 
 @ex.automain
@@ -340,45 +334,14 @@ def dsd_100_experiment(model_config):
         if not os.path.exists(dir):
             os.makedirs(dir)
 
-    # Set up data input
-    if os.path.exists('dataset.pkl'):
-        with open('dataset.pkl', 'r') as file:
-            dataset = pickle.load(file)
-        print("Loaded dataset from pickle!")
-    else:
-        dsd_train, dsd_test = Datasets.getMUSDB(model_config["musdb_path"])
-        ccm = Datasets.getCCMixter("CCMixter.xml")
-
-        # Pick 25 random songs for validation from MUSDB train set (this is always the same selection each time since we fix the random seed!)
-        val_idx = np.random.choice(len(dsd_train), size=25, replace=False)
-        train_idx = [i for i in range(len(dsd_train)) if i not in val_idx]
-        print("Validation with MUSDB training songs no. " + str(train_idx))
-
-        # Draw randomly from datasets
-        dataset = dict()
-        dataset["train_sup"] = [dsd_train[i] for i in train_idx] + ccm
-        dataset["train_unsup"] = list() #[dsd_train[0][25:], dsd_train[1][25:], dsd_train[2][25:]] #[fma, list(), looperman]
-        dataset["valid"] = [dsd_train[i] for i in val_idx]
-        dataset["test"] = dsd_test
-
-        with open('dataset.pkl', 'wb') as file:
-            pickle.dump(dataset,file)
-        print("Created dataset structure")
-
-    # Setup dataset depending on task. Dataset contains sources in order: (mix, acc, bass, drums, other, vocal)
-    if model_config["task"] == "voice":
-        for i in range(75):
-            dataset["train_sup"][i] = (dataset["train_sup"][i][0], dataset["train_sup"][i][1], dataset["train_sup"][i][5])
-        for subset in ["valid", "test"]:
-            for i in range(len(dataset[subset])):
-                dataset[subset][i] = (dataset[subset][i][0], dataset[subset][i][1], dataset[subset][i][5])
-    else: # Multitask - Remove CCMixter from training, and acc source
-        dataset["train_sup"] = dataset["train_sup"][:75]
-        for subset in ["train_sup", "valid", "test"]:
-            for i in range(len(dataset[subset])):
-                dataset[subset][i] = (dataset[subset][i][0], dataset[subset][i][2], dataset[subset][i][3], dataset[subset][i][4], dataset[subset][i][5])
+    print("Creating datasets")
+    musdb_train, musdb_eval = [musdb_input.MusDBInput(
+        is_training=is_training,
+        data_dir=model_config['musdb_path'],
+        transpose_input=False,
+        use_bfloat16=False) for is_training in [True, False]]
 
     # Optimize in a +supervised fashion until validation loss worsens
-    sup_model_path, sup_loss = optimise(dataset=dataset)
+    sup_model_path, sup_loss = optimise(dataset=[musdb_train, musdb_eval])
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
     Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config["estimates_path"], "train")

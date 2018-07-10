@@ -53,20 +53,20 @@ class MusDBInput(object):
             self.data_dir = None
         self.transpose_input = transpose_input
 
-    def set_shapes(self, batch_size, images, labels):
+    def set_shapes(self, batch_size, mix, sources):
         """Statically set the batch_size dimension."""
-        if self.transpose_input:
-            images.set_shape(images.get_shape().merge_with(
-                tf.TensorShape([None, None, None, batch_size])))
-            labels.set_shape(labels.get_shape().merge_with(
-                tf.TensorShape([batch_size])))
-        else:
-            images.set_shape(images.get_shape().merge_with(
-                tf.TensorShape([batch_size, None, None, None])))
-            labels.set_shape(labels.get_shape().merge_with(
-                tf.TensorShape([batch_size])))
+        #if self.transpose_input:
+        #    images.set_shape(images.get_shape().merge_with(
+        #        tf.TensorShape([None, None, None, batch_size])))
+        #    labels.set_shape(labels.get_shape().merge_with(
+        #        tf.TensorShape([batch_size])))
+        #else:
+        mix.set_shape(mix.get_shape().merge_with(
+            tf.TensorShape([batch_size, None])))
+        sources.set_shape(sources.get_shape().merge_with(
+            tf.TensorShape([batch_size, None, None])))
 
-        return images, labels
+        return mix, sources
 
     def dataset_parser(self, value):
         """Parse an audio example record from a serialized string Tensor."""
@@ -89,8 +89,9 @@ class MusDBInput(object):
         audio_data = tf.decode_raw(parsed['audio/encoded'], tf.float32)
         #audio_data = tf.reshape(parsed['audio/encoded'], shape=[])
         audio_data = tf.reshape(audio_data, tf.stack([NUM_SOURCES+1, NUM_SAMPLES]))
+        mix, sources = audio_data[0], audio_data[1:]
 
-        return audio_data
+        return mix, sources
 
     def input_fn(self, params):
         """Input function which provides a single batch for train or eval.
