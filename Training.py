@@ -4,28 +4,28 @@ from tensorflow.contrib import tpu
 import numpy as np
 import os
 
-import Datasets
-from Input import Input as Input
-from Input import batchgenerators as batchgen
 from Input import musdb_input
 import Utils
 import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
-import cPickle as pickle
 import Test
 import Evaluate
 
 import functools
-from tensorflow.contrib.signal.python.ops import window_ops
 from tensorflow.contrib.cluster_resolver import TPUClusterResolver
+from tensorflow.contrib import summary
+from tensorflow.contrib.tpu.python.tpu import tpu_config
+from tensorflow.contrib.tpu.python.tpu import tpu_estimator
+from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
+from tensorflow.contrib.training.python.training import evaluation
+from tensorflow.python.estimator import estimator
 
 ex = Experiment('Waveunet')
 
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path": "gs://vimsstfrecords/musdb18", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN
-                    # CCMixter.xml
+    model_config = {"musdb_path": "gs://vimsstfrecords/musdb18", # SET MUSDB PATH HERE
                     "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "model_base_dir": "checkpoints", # Base folder for model checkpoints
@@ -33,6 +33,7 @@ def cfg():
                     "batch_size": 16, # Batch size
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
+                    "training_steps": 2000*100, # Number of training steps per training
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -168,131 +169,70 @@ def unet_spectrogram_l1():
 
 
 @ex.capture
-def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_model=None):
-    # Determine input and output shapes
-    disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]  # Shape of input
+def unet_separator(mix, sources, mode, model_config):
+    disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
     if model_config["network"] == "unet":
-        separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(model_config["num_layers"], model_config["num_initial_filters"],
-                                                                   output_type=model_config["output_type"],
-                                                                   context=model_config["context"],
-                                                                   mono=model_config["mono_downmix"],
-                                                                   upsampling=model_config["upsampling"],
-                                                                   num_sources=model_config["num_sources"],
-                                                                   filter_size=model_config["filter_size"],
-                                                                   merge_filter_size=model_config["merge_filter_size"])
-    elif model_config["network"] == "unet_spectrogram":
-        separator_class = Models.UnetSpectrogramSeparator.UnetSpectrogramSeparator(model_config["num_layers"], model_config["num_initial_filters"],
-                                                                       mono=model_config["mono_downmix"],
-                                                                       num_sources=model_config["num_sources"])
+        separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
+            model_config["num_layers"], model_config["num_initial_filters"],
+            output_type=model_config["output_type"],
+            context=model_config["context"],
+            mono=model_config["mono_downmix"],
+            upsampling=model_config["upsampling"],
+            num_sources=model_config["num_sources"],
+            filter_size=model_config["filter_size"],
+            merge_filter_size=model_config["merge_filter_size"])
     else:
         raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
 
-    # Creating the batch generators
-    # TODO rewrite this part to use pre-processed tf.records (with fixed input size)
+    # Compute loss.
+    separator_sources = separator_func(mix, True, not model_config["raw_audio_loss"], reuse=False)
 
-    # Placeholders and input normalisation
-    # mix_context, sources = Input.get_multitrack_placeholders(sep_output_shape, model_config["num_sources"],
-    # sep_input_shape, "sup")
-    # mix = Utils.crop(mix_context, sep_output_shape)
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        predictions = {
+            'sources': separator_sources
+        }
+        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-    print("Training...")
-
-    # BUILD MODELS
-    # Separator
-    # input: Input batch of mixtures, 3D tensor [batch_size, num_samples, num_channels]
-    # Sources are output in order [acc, voice] for voice separation, [bass, drums, other, vocals] for multi-instrument separation
-    separator_sources = separator_func(mix_context, True, not model_config["raw_audio_loss"], reuse=False)
     # Supervised objective: MSE in log-normalized magnitude space
     separator_loss = 0
     for (real_source, sep_source) in zip(sources, separator_sources):
-        #if model_config["network"] == "unet_spectrogram" and not model_config["raw_audio_loss"]:
-        #    window = functools.partial(window_ops.hann_window, periodic=True)
-        #    stfts = tf.contrib.signal.stft(tf.squeeze(real_source, 2), frame_length=1024, frame_step=768,
-        #                                   fft_length=1024, window_fn=window)
-        #    real_mag = tf.abs(stfts)
-        #    separator_loss += tf.reduce_mean(tf.abs(real_mag - sep_source))
-        #else:
         separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
-    separator_loss = separator_loss / float(len(sources)) # Normalise by number of sources
+    separator_loss /= float(len(sources)) # Normalise by number of sources
 
-    # TRAINING CONTROL VARIABLES
-    global_step = tf.get_variable('global_step', [], initializer=tf.constant_initializer(0), trainable=False, dtype=tf.int64)
-    increment_global_step = tf.assign(global_step, global_step + 1)
-    sep_lr = tf.get_variable('unsup_sep_lr', [],initializer=tf.constant_initializer(model_config["init_sup_sep_lr"], dtype=tf.float32), trainable=False)
+    # SUMMARIES
+    #tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
+    #sup_summaries = tf.summary.merge_all(key='sup')
 
-    # Set up optimizers
-    separator_vars = Utils.getTrainableVariables("separator")
-    print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
-    print("Num of variables" + str(len(tf.global_variables())))
+    # Creating evaluation estimator
+    if mode == tf.estimator.ModeKeys.EVAL:
+        return tpu_estimator.TPUEstimatorSpec(
+            mode=mode,
+            loss=separator_loss,
+            eval_metrics=(tf.metrics.mean_squared_error, [sources, separator_sources]))
 
-    update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-    with tf.control_dependencies(update_ops):
-        with tf.variable_scope("separator_solver"):
-            separator_solver = tf.train.AdamOptimizer(learning_rate=sep_lr).minimize(separator_loss, var_list=separator_vars)
-            separator_solver = tf.contrib.tpu.CrossShardOptimizer(separator_solver)
 
-    # SUMMARAIES
-    tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
-    sup_summaries = tf.summary.merge_all(key='sup')
-
-    # Start session and queue input threads
-    config = tf.ConfigProto()
-
-    tpu_grpc_url = TPUClusterResolver(
-        tpu=[os.environ['TPU_NAME']]).get_master()
-
-    config.gpu_options.allow_growth = True
-    sess = tf.Session(target=tpu_grpc_url, config=config)
-    sess.run(tpu.initialize_system())
-    sess.run(tf.global_variables_initializer())
-
-    writer = tf.summary.FileWriter(model_config["log_dir"] + os.path.sep + str(experiment_id), graph=sess.graph)
-
-    # CHECKPOINTING
-    # Load pretrained model to continue training, if we are supposed to
-    if load_model != None:
-        restorer = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
+    # Create training op.
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        sep_lr = tf.get_variable('unsup_sep_lr', [],
+                                 initializer=tf.constant_initializer(model_config["init_sup_sep_lr"],
+                                                                     dtype=tf.float32),
+                                 trainable=False)
+        separator_vars = Utils.getTrainableVariables("separator")
+        print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
         print("Num of variables" + str(len(tf.global_variables())))
-        restorer.restore(sess, load_model)
-        print('Pre-trained model restored from file ' + load_model)
 
-    saver = tf.train.Saver(tf.global_variables(), write_version=tf.train.SaverDef.V2)
+        separator_solver = tpu_optimizer.CrossShardOptimizer(tf.train.AdamOptimizer(learning_rate=sep_lr))
 
-    # Start training loop
-    run = True
-    _global_step = sess.run(global_step)
-    _init_step = _global_step
-    it = 0
-    while run:
-        # TRAIN SEPARATOR
-        sup_batch = sup_batch_gen.get_batch()
-        feed = {i:d for i,d in zip(sources, sup_batch[1:])}
-        feed.update({mix_context : sup_batch[0]})
-        _, _sup_summaries = sess.run([separator_solver, sup_summaries], feed)
-        writer.add_summary(_sup_summaries, global_step=_global_step)
+        train_op = separator_solver.minimize(separator_loss,
+                                             var_list=separator_vars,
+                                             global_step=tf.train.get_global_step())
+        return tpu_estimator.TPUEstimatorSpec(mode=mode,
+                                              loss=separator_loss,
+                                              train_op=train_op)
 
-        # Increment step counter, check if maximum iterations per epoch is achieved and stop in that case
-        _global_step = sess.run(increment_global_step)
-
-        if _global_step - _init_step > model_config["epoch_it"]:
-            run = False
-            print("Finished training phase, stopping batch generators")
-            sup_batch_gen.stop_workers()
-
-    # Epoch finished - Save model
-    print("Finished epoch!")
-    save_path = saver.save(sess, model_config["model_base_dir"] + os.path.sep + str(experiment_id) + os.path.sep + str(experiment_id), global_step=int(_global_step))
-
-    # Close session, clear computational graph
-    writer.flush()
-    writer.close()
-    sess.close()
-    tf.reset_default_graph()
-
-    return save_path
 
 @ex.capture
 def optimise(model_config, experiment_id, dataset):
@@ -334,6 +274,16 @@ def dsd_100_experiment(model_config):
         if not os.path.exists(dir):
             os.makedirs(dir)
 
+    print("TPU resolver started")
+    config = tf.ConfigProto()
+    tpu_grpc_url = TPUClusterResolver(tpu=[os.environ['TPU_NAME']]).get_master()
+
+    config.gpu_options.allow_growth = True
+    sess = tf.Session(target=tpu_grpc_url, config=config)
+    sess.run(tpu.initialize_system())
+    sess.run(tf.global_variables_initializer())
+
+
     print("Creating datasets")
     musdb_train, musdb_eval = [musdb_input.MusDBInput(
         is_training=is_training,
@@ -342,6 +292,21 @@ def dsd_100_experiment(model_config):
         use_bfloat16=False) for is_training in [True, False]]
 
     # Optimize in a +supervised fashion until validation loss worsens
-    sup_model_path, sup_loss = optimise(dataset=[musdb_train, musdb_eval])
-    print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
-    Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config["estimates_path"], "train")
+    separator = tf.estimator.Estimator(
+        model_fn=unet_separator)
+
+    # Train the Model.
+    separator.train(
+        input_fn=musdb_train.input_fn,
+        steps=model_config['training_steps']) # Should be an early stopping here, but it will come with tf 1.10
+
+    print("Supervised training finished!")
+
+    # Evaluate the model.
+    eval_result = separator.evaluate(
+        input_fn=musdb_eval.input_fn)
+
+    #sup_model_path, sup_loss = optimise(dataset=[musdb_train, musdb_eval])
+    #print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
+    #Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config[
+    # "estimates_path"], "train")
