@@ -293,13 +293,6 @@ def dsd_100_experiment(model_config):
             os.makedirs(dir)
 
     print("TPU resolver started")
-    config = tf.ConfigProto()
-    tpu_grpc_url = TPUClusterResolver(tpu=[os.environ['TPU_NAME']]).get_master()
-
-    config.gpu_options.allow_growth = True
-    sess = tf.Session(target=tpu_grpc_url, config=config)
-    sess.run(tpu.initialize_system())
-    sess.run(tf.global_variables_initializer())
 
     tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu=[os.environ['TPU_NAME']])
     config = tpu_config.RunConfig(
@@ -340,3 +333,7 @@ def dsd_100_experiment(model_config):
     #print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
     #Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config[
     # "estimates_path"], "train")
+
+if __name__ == '__main__':
+    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.app.run()
