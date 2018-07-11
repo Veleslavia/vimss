@@ -116,7 +116,7 @@ def full_multi_instrument():
         "output_type": "difference",
         "context": True,
         "upsampling": "linear",
-        "mono_downmix": False,
+        "mono_downmix": True,
         "task" : "multi_instrument"
     }
 
@@ -169,7 +169,10 @@ def unet_spectrogram_l1():
 
 
 @ex.capture
-def unet_separator(mix, sources, mode, model_config):
+def unet_separator(features, labels, mode, params):
+    mix = features
+    sources = tf.transpose(labels, [3, 0, 1, 2])
+    model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
     if model_config["network"] == "unet":
         separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
@@ -185,6 +188,18 @@ def unet_separator(mix, sources, mode, model_config):
         raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
+    # Input context that the input audio has to be padded ON EACH SIDE
+    print(sep_input_shape, sep_output_shape)
+    pad = (sep_input_shape[1] - sep_output_shape[1])
+    print(pad)
+    pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
+    print(pad_tensor)
+    print(mix.shape)
+    mix = tf.pad(mix, pad_tensor, "CONSTANT")
+    print(mix.shape)
+    pad_tensor = tf.constant([[0, 0], [0, 0], [2, 3], [0, 0]])
+    sources = tf.pad(sources, pad_tensor, "CONSTANT")
+    print(sources.shape)
     separator_func = separator_class.get_output
 
     # Compute loss.
@@ -194,13 +209,13 @@ def unet_separator(mix, sources, mode, model_config):
         predictions = {
             'sources': separator_sources
         }
-        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
+        return tpu_estimator.TPUEstimatorSpec(mode, predictions=predictions)
 
     # Supervised objective: MSE in log-normalized magnitude space
-    separator_loss = 0
-    for (real_source, sep_source) in zip(sources, separator_sources):
-        separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
-    separator_loss /= float(len(sources)) # Normalise by number of sources
+    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
+    #for (real_source, sep_source) in zip(sources, separator_sources):
+    #    separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
+    #separator_loss /= float(len(sources)) # Normalise by number of sources
 
     # SUMMARIES
     #tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
@@ -293,7 +308,8 @@ def dsd_100_experiment(model_config):
 
     # Optimize in a +supervised fashion until validation loss worsens
     separator = tf.estimator.Estimator(
-        model_fn=unet_separator)
+        model_fn=unet_separator,
+        params=model_config)
 
     # Train the Model.
     separator.train(

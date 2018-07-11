@@ -62,9 +62,9 @@ class MusDBInput(object):
         #        tf.TensorShape([batch_size])))
         #else:
         mix.set_shape(mix.get_shape().merge_with(
-            tf.TensorShape([batch_size, None])))
-        sources.set_shape(sources.get_shape().merge_with(
             tf.TensorShape([batch_size, None, None])))
+        sources.set_shape(sources.get_shape().merge_with(
+            tf.TensorShape([batch_size, None, None, None])))
 
         return mix, sources
 
@@ -87,11 +87,12 @@ class MusDBInput(object):
 
         parsed = tf.parse_single_example(value, keys_to_features)
         audio_data = tf.decode_raw(parsed['audio/encoded'], tf.float32)
-        audio_data.set_shape([NUM_SOURCES+1, NUM_SAMPLES])
+        audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
+        audio_data = tf.reshape(audio_data, audio_shape)
+        # audio_data.set_shape([NUM_SOURCES+1, NUM_SAMPLES])
         # audio_data = tf.reshape(parsed['audio/encoded'], shape=[])
         # audio_data = tf.reshape(audio_data, tf.stack())
-        mix, sources = audio_data[0], audio_data[1:]
-
+        mix, sources = tf.reshape(audio_data[0], tf.stack([NUM_SAMPLES, CHANNELS])), tf.reshape(audio_data[1:], tf.stack([NUM_SAMPLES, CHANNELS, NUM_SOURCES]))
         return mix, sources
 
     def input_fn(self, params):
