@@ -249,6 +249,7 @@ def unet_separator(features, labels, mode, params):
                                               train_op=train_op)
 
 
+"""
 @ex.capture
 def optimise(model_config, experiment_id, dataset):
     epoch = 0
@@ -280,6 +281,8 @@ def optimise(model_config, experiment_id, dataset):
     print("TRAINING FINISHED - TESTING WITH BEST MODEL " + best_model_path)
     test_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=musdb_eval, load_model=best_model_path)
     return best_model_path, test_loss
+"""
+
 
 @ex.automain
 def dsd_100_experiment(model_config):
@@ -298,6 +301,15 @@ def dsd_100_experiment(model_config):
     sess.run(tpu.initialize_system())
     sess.run(tf.global_variables_initializer())
 
+    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu=[os.environ['TPU_NAME']])
+    config = tpu_config.RunConfig(
+        cluster=tpu_cluster_resolver,
+        model_dir=model_config['estimates_path'],
+        save_checkpoints_steps=max(600, 500),
+        tpu_config=tpu_config.TPUConfig(
+            iterations_per_loop=500,
+            num_shards=8,
+            per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
     print("Creating datasets")
     musdb_train, musdb_eval = [musdb_input.MusDBInput(
@@ -307,8 +319,10 @@ def dsd_100_experiment(model_config):
         use_bfloat16=False) for is_training in [True, False]]
 
     # Optimize in a +supervised fashion until validation loss worsens
-    separator = tf.estimator.Estimator(
+    separator = tpu_estimator.TPUEstimator(
+        use_tpu=True,
         model_fn=unet_separator,
+        config=config,
         params=model_config)
 
     # Train the Model.
