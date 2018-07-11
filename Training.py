@@ -28,7 +28,7 @@ def cfg():
     model_config = {"musdb_path": "gs://vimsstfrecords/musdb18", # SET MUSDB PATH HERE
                     "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-                    "model_base_dir": "checkpoints", # Base folder for model checkpoints
+                    "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 16, # Batch size
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
@@ -189,12 +189,10 @@ def unet_separator(features, labels, mode, params):
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     # Input context that the input audio has to be padded ON EACH SIDE
+    # TODO move this to dataset function
     print(sep_input_shape, sep_output_shape)
     pad = (sep_input_shape[1] - sep_output_shape[1])
-    print(pad)
     pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
-    print(pad_tensor)
-    print(mix.shape)
     mix = tf.pad(mix, pad_tensor, "CONSTANT")
     print(mix.shape)
     pad_tensor = tf.constant([[0, 0], [0, 0], [2, 3], [0, 0]])
@@ -230,6 +228,8 @@ def unet_separator(features, labels, mode, params):
 
 
     # Create training op.
+    # TODO add learning rate schedule
+    # TODO add early stopping
     if mode == tf.estimator.ModeKeys.TRAIN:
         sep_lr = tf.get_variable('unsup_sep_lr', [],
                                  initializer=tf.constant_initializer(model_config["init_sup_sep_lr"],
@@ -237,7 +237,7 @@ def unet_separator(features, labels, mode, params):
                                  trainable=False)
         separator_vars = Utils.getTrainableVariables("separator")
         print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
-        print("Num of variables" + str(len(tf.global_variables())))
+        print("Num of variables: " + str(len(tf.global_variables())))
 
         separator_solver = tpu_optimizer.CrossShardOptimizer(tf.train.AdamOptimizer(learning_rate=sep_lr))
 
@@ -297,7 +297,7 @@ def dsd_100_experiment(model_config):
     tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu=[os.environ['TPU_NAME']])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
-        model_dir=model_config['estimates_path'],
+        model_dir=model_config['model_base_dir'],
         save_checkpoints_steps=max(600, 500),
         tpu_config=tpu_config.TPUConfig(
             iterations_per_loop=500,
@@ -316,7 +316,9 @@ def dsd_100_experiment(model_config):
         use_tpu=True,
         model_fn=unet_separator,
         config=config,
-        params=model_config)
+        train_batch_size=model_config['batch_size'],
+        eval_batch_size=model_config['batch_size'],
+        params={i: model_config[i] for i in model_config if i != 'batch_size'})
 
     # Train the Model.
     separator.train(

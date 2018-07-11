@@ -72,7 +72,7 @@ class MusDBInput(object):
         """Parse an audio example record from a serialized string Tensor."""
         keys_to_features = {
             'audio/encoded':
-                tf.FixedLenFeature((), tf.string, ''),
+                tf.VarLenFeature(tf.float32),
             'audio/sample_rate':
                 tf.FixedLenFeature([], tf.int64, SAMPLE_RATE),
             'audio/sample_idx':
@@ -86,12 +86,9 @@ class MusDBInput(object):
         }
 
         parsed = tf.parse_single_example(value, keys_to_features)
-        audio_data = tf.decode_raw(parsed['audio/encoded'], tf.float32)
+        audio_data = tf.sparse_tensor_to_dense(parsed['audio/encoded'], default_value=0)
         audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
-        # audio_data.set_shape([NUM_SOURCES+1, NUM_SAMPLES])
-        # audio_data = tf.reshape(parsed['audio/encoded'], shape=[])
-        # audio_data = tf.reshape(audio_data, tf.stack())
         mix, sources = tf.reshape(audio_data[0], tf.stack([NUM_SAMPLES, CHANNELS])), tf.reshape(audio_data[1:], tf.stack([NUM_SAMPLES, CHANNELS, NUM_SOURCES]))
         return mix, sources
 
@@ -119,7 +116,7 @@ class MusDBInput(object):
             dataset = dataset.repeat()
 
         def fetch_dataset(filename):
-            buffer_size = 256 * 1024 * 1024     # 256 MiB cached data per file
+            buffer_size = 128 * 1024 * 1024     # 128 MiB cached data per file
             dataset = tf.data.TFRecordDataset(filename, buffer_size=buffer_size)
             return dataset
 

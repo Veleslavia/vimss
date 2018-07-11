@@ -110,10 +110,10 @@ def _get_segments_from_audio_cache(file_data_cache):
             each one contains file_basename, sample_idx, 5 raw data audio frames in a single list
     """
     segments = list()
-    for sample_idx in range(file_data_cache[0][1]//SAMPLE_RATE): # sampling segments, ignore the last incomplete segment
+    for sample_idx in range(file_data_cache[0][1]//NUM_SAMPLES): # sampling segments, ignore the last incomplete segment
         segments_data = list()
         for source in file_data_cache:
-            segments_data.append(source[2][sample_idx*SAMPLE_RATE:(sample_idx+1)*SAMPLE_RATE])
+            segments_data.append(source[2][sample_idx*NUM_SAMPLES:(sample_idx+1)*NUM_SAMPLES])
         segments.append([file_data_cache[0][0], sample_idx, segments_data])
     return segments
 
@@ -200,12 +200,12 @@ def convert_to_tf_records(raw_data_dir):
     # Glob all the training files
     training_files = tf.gfile.Glob(
         os.path.join(raw_data_dir, TRAINING_DIRECTORY, '*.wav'))
-    training_files = list(set([filename.split('.')[0] for filename in training_files]))
+    training_files = list(set([filename.split('.stem_')[0] for filename in training_files]))
 
     # Glob all the validation files
     test_files = sorted(tf.gfile.Glob(
         os.path.join(raw_data_dir, TEST_DIRECTORY, '*.wav')))
-    test_files = list(set([filename.split('.')[0] for filename in test_files]))
+    test_files = list(set([filename.split('.stem_')[0] for filename in test_files]))
 
     # Create training data
     tf.logging.info('Processing the training data.')
