@@ -90,13 +90,13 @@ def _convert_to_example(filename, sample_idx, data_buffer, num_sources,
 
     """
     example = tf.train.Example(features=tf.train.Features(feature={
-        #'audio/file_basename': _bytes_feature(os.path.basename(filename)),
         'audio/file_basename': _bytes_feature("_".join((os.path.basename(filename[0])).split("_")[:3])),
-	'audio/sample_rate': _int64_feature(sample_rate),
+	    'audio/sample_rate': _int64_feature(sample_rate),
         'audio/sample_idx': _int64_feature(sample_idx),
         'audio/num_samples': _int64_feature(num_samples),
         'audio/channels': _int64_feature(channels),
         'audio/num_sources': _int64_feature(num_sources),
+        'audio/source_names': _bytes_feature(",".join((os.path.basename(filename[0]).replace(".","_")).split("_")[3:-1])),
         'audio/encoded': _sources_floatlist_feature(data_buffer)}))
     return example
 
@@ -136,7 +136,7 @@ def _process_audio_files_batch(chunk_files, output_file):
         file_data_cache = list()
         for source in track:
             print(source)
-	    data, sr = librosa.core.load(source, sr=SAMPLE_RATE, mono=True)
+            data, sr = librosa.core.load(source, sr=SAMPLE_RATE, mono=True)
             file_data_cache.append([track, len(data), data])
 
             # Option 1: use only tf to read and resample audio
@@ -297,4 +297,3 @@ def main(argv):  # pylint: disable=unused-argument
 
 if __name__ == '__main__':
     tf.app.run()
-
