@@ -37,7 +37,7 @@ def cfg():
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
                     "training_steps": 2000*1, # Number of training steps per training
-                    "use_tpu": True,
+                    "use_tpu": False,
                     "load_model": True,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
@@ -193,16 +193,15 @@ def unet_separator(features, labels, mode, params):
         raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
+
     # Input context that the input audio has to be padded ON EACH SIDE
     # TODO move this to dataset function
-    print(sep_input_shape, sep_output_shape)
     pad = (sep_input_shape[1] - sep_output_shape[1])
     pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
     mix = tf.pad(mix, pad_tensor, "CONSTANT")
-    print(mix.shape)
     pad_tensor = tf.constant([[0, 0], [0, 0], [2, 3], [0, 0]])
     sources = tf.pad(sources, pad_tensor, "CONSTANT")
-    print(sources.shape)
+
     separator_func = separator_class.get_output
 
     # Compute loss.
@@ -212,36 +211,33 @@ def unet_separator(features, labels, mode, params):
         predictions = {
             'sources': separator_sources
         }
-        return tpu_estimator.TPUEstimatorSpec(mode, predictions=predictions)
+        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
     # Supervised objective: MSE in log-normalized magnitude space
-    separator_loss = 0.0
-    #separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
-    for i in range(len(sources)):
-        separator_loss += tf.reduce_mean(tf.square(sources[i] - separator_sources[i]))
-    separator_loss /= float(len(sources)) # Normalise by number of sources
+    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
 
-    # SUMMARIES
-    #tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
-    #sup_summaries = tf.summary.merge_all(key='sup')
+    tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
+    sup_summaries = tf.summary.merge_all(key='sup')
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
-        def metric_fn(sources, separator_sources):
-            mean_mse_loss = 0.0
-            for i in range(len(sources)):
-                mean_mse_loss += tf.reduce_mean(tf.square(sources[i] - separator_sources[i]))
-            mean_mse_loss /= float(len(sources)) # Normalise by number of sources
-            return {
-                'mse': mean_mse_loss,
-          }
+        def metric_fn(labels, predictions):
+            #mean_mse_loss = 0.0
+            #for i in range(sources.shape[0]):
+            #    mean_mse_loss += tf.reduce_mean(tf.square(sources[i] - separator_sources[i]))
+            #mean_mse_loss /= float(sources.shape[0].value) # Normalise by number of sources
+            mean_mse_loss = tf.metrics.mean_squared_error(labels, predictions)
+            return {'mse': mean_mse_loss}
 
-        eval_metrics = (metric_fn, [sources, separator_sources])
+        separator_sources = tf.transpose(tf.stack(separator_sources), [1, 2, 3, 0])
+        sources = tf.transpose(sources, [1, 2, 3, 0])
+        eval_params = {'labels': sources,
+                       'predictions': separator_sources}
 
         return tpu_estimator.TPUEstimatorSpec(
             mode=mode,
             loss=separator_loss,
-            eval_metrics=eval_metrics)
+            eval_metrics=(metric_fn, eval_params))
 
 
     # Create training op.
@@ -268,41 +264,6 @@ def unet_separator(features, labels, mode, params):
                                               train_op=train_op)
 
 
-"""
-@ex.capture
-def optimise(model_config, experiment_id, dataset):
-    epoch = 0
-    best_loss = 10000
-    model_path = None
-    best_model_path = None
-    for i in range(2):
-        worse_epochs = 0
-        if i==1:
-            print("Finished first round of training, now entering fine-tuning stage")
-            model_config["batch_size"] *= 2
-            model_config["cache_size"] *= 2
-            model_config["min_replacement_rate"] *= 2
-            model_config["init_sup_sep_lr"] = 1e-5
-        while worse_epochs < 20:    # Early stopping on validation set after a few epochs
-            print("EPOCH: " + str(epoch))
-            musdb_train, musdb_eval = dataset[0], dataset[1]
-            model_path = train(sup_dataset=musdb_train, load_model=model_path)
-            curr_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=musdb_eval, load_model=model_path)
-            epoch += 1
-            if curr_loss < best_loss:
-                worse_epochs = 0
-                print("Performance on validation set improved from " + str(best_loss) + " to " + str(curr_loss))
-                best_model_path = model_path
-                best_loss = curr_loss
-            else:
-                worse_epochs += 1
-                print("Performance on validation set worsened to " + str(curr_loss))
-    print("TRAINING FINISHED - TESTING WITH BEST MODEL " + best_model_path)
-    test_loss = Test.test(model_config, model_folder=str(experiment_id), audio_list=musdb_eval, load_model=best_model_path)
-    return best_model_path, test_loss
-"""
-
-
 @ex.automain
 def dsd_100_experiment(model_config):
     print("SCRIPT START")
@@ -313,7 +274,10 @@ def dsd_100_experiment(model_config):
 
     print("TPU resolver started")
 
-    tpu_cluster_resolver = tf.contrib.cluster_resolver.TPUClusterResolver(tpu=[os.environ['TPU_NAME']])
+    tpu_cluster_resolver = TPUClusterResolver(
+        tpu=[os.environ['TPU_NAME']],
+        project='plated-dryad-162216',
+        zone='us-central1-f')
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'],
@@ -332,19 +296,21 @@ def dsd_100_experiment(model_config):
 
     # Optimize in a +supervised fashion until validation loss worsens
     separator = tpu_estimator.TPUEstimator(
-        use_tpu=True,
+        use_tpu=model_config["use_tpu"],
         model_fn=unet_separator,
         config=config,
         train_batch_size=model_config['batch_size'],
         eval_batch_size=model_config['batch_size'],
+        predict_batch_size=model_config['batch_size'],
         params={i: model_config[i] for i in model_config if i != 'batch_size'})
 
     # Train the Model.
     if model_config['load_model']:
         current_step = estimator._load_global_step_from_checkpoint_dir(model_config['model_base_dir'])
-    separator.train(
-        input_fn=musdb_train.input_fn,
-        steps=model_config['training_steps']) # Should be an early stopping here, but it will come with tf 1.10
+    else:
+        separator.train(
+            input_fn=musdb_train.input_fn,
+            steps=model_config['training_steps']) # Should be an early stopping here, but it will come with tf 1.10
 
     print("Supervised training finished!")
 
