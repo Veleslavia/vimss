@@ -217,8 +217,8 @@ def unet_separator(features, labels, mode, params):
     # Supervised objective: MSE in log-normalized magnitude space
     separator_loss = 0.0
     #separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
-    for (real_source, sep_source) in zip(sources, separator_sources):
-        separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
+    for i in range(len(sources)):
+        separator_loss += tf.reduce_mean(tf.square(sources[i] - separator_sources[i]))
     separator_loss /= float(len(sources)) # Normalise by number of sources
 
     # SUMMARIES
@@ -229,8 +229,8 @@ def unet_separator(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.EVAL:
         def metric_fn(sources, separator_sources):
             mean_mse_loss = 0.0
-            for (real_source, sep_source) in zip(sources, separator_sources):
-                mean_mse_loss += tf.reduce_mean(tf.square(real_source - sep_source))
+            for i in range(len(sources)):
+                mean_mse_loss += tf.reduce_mean(tf.square(sources[i] - separator_sources[i]))
             mean_mse_loss /= float(len(sources)) # Normalise by number of sources
             return {
                 'mse': mean_mse_loss,
