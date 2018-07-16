@@ -1,4 +1,5 @@
 from sacred import Experiment
+import pickle
 import tensorflow as tf
 from tensorflow.contrib import tpu
 import numpy as np
@@ -20,6 +21,8 @@ from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.training.python.training import evaluation
 from tensorflow.python.estimator import estimator
 
+#tf.enable_eager_execution()
+
 ex = Experiment('Waveunet')
 
 @ex.config
@@ -28,12 +31,13 @@ def cfg():
     model_config = {"musdb_path": "gs://vimsstfrecords/musdb18", # SET MUSDB PATH HERE
                     "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-                    "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
+                    "model_base_dir": "gs://vimsscheckpoints/baseline", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 16, # Batch size
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
-                    "training_steps": 2000*100, # Number of training steps per training
+                    "training_steps": 2000*1, # Number of training steps per training
+                    "use_tpu": True,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -210,10 +214,11 @@ def unet_separator(features, labels, mode, params):
         return tpu_estimator.TPUEstimatorSpec(mode, predictions=predictions)
 
     # Supervised objective: MSE in log-normalized magnitude space
-    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
-    #for (real_source, sep_source) in zip(sources, separator_sources):
-    #    separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
-    #separator_loss /= float(len(sources)) # Normalise by number of sources
+    separator_loss = 0.0
+    #separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
+    for (real_source, sep_source) in zip(sources, separator_sources):
+        separator_loss += tf.reduce_mean(tf.square(real_source - sep_source))
+    separator_loss /= float(len(sources)) # Normalise by number of sources
 
     # SUMMARIES
     #tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
@@ -221,10 +226,21 @@ def unet_separator(features, labels, mode, params):
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
+        def metric_fn(sources, separator_sources):
+            mean_mse_loss = 0.0
+            for (real_source, sep_source) in zip(sources, separator_sources):
+                mean_mse_loss += tf.reduce_mean(tf.square(real_source - sep_source))
+            mean_mse_loss /= float(len(sources)) # Normalise by number of sources
+            return {
+                'mse': mean_mse_loss,
+          }
+
+        eval_metrics = (metric_fn, [sources, separator_sources])
+
         return tpu_estimator.TPUEstimatorSpec(
             mode=mode,
             loss=separator_loss,
-            eval_metrics=(tf.metrics.mean_squared_error, [sources, separator_sources]))
+            eval_metrics=eval_metrics)
 
 
     # Create training op.
@@ -239,7 +255,9 @@ def unet_separator(features, labels, mode, params):
         print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
         print("Num of variables: " + str(len(tf.global_variables())))
 
-        separator_solver = tpu_optimizer.CrossShardOptimizer(tf.train.AdamOptimizer(learning_rate=sep_lr))
+        separator_solver = tf.train.AdamOptimizer(learning_rate=sep_lr)
+        if model_config["use_tpu"]:
+            separator_solver = tpu_optimizer.CrossShardOptimizer(separator_solver)
 
         train_op = separator_solver.minimize(separator_loss,
                                              var_list=separator_vars,
@@ -321,6 +339,8 @@ def dsd_100_experiment(model_config):
         params={i: model_config[i] for i in model_config if i != 'batch_size'})
 
     # Train the Model.
+    if model_config['load_model']:
+        current_step = estimator._load_global_step_from_checkpoint_dir(model_config['model_base_dir'])
     separator.train(
         input_fn=musdb_train.input_fn,
         steps=model_config['training_steps']) # Should be an early stopping here, but it will come with tf 1.10
@@ -329,12 +349,16 @@ def dsd_100_experiment(model_config):
 
     # Evaluate the model.
     eval_result = separator.evaluate(
+        input_fn=musdb_eval.input_fn,
+        steps=1000)
+
+    print("Test results and save predicted sources:")
+    predictions = separator.predict(
         input_fn=musdb_eval.input_fn)
 
-    #sup_model_path, sup_loss = optimise(dataset=[musdb_train, musdb_eval])
-    #print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
-    #Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config[
-    # "estimates_path"], "train")
+    for i, predicted in enumerate(predictions):
+        pickle.dump(predicted, open('predicted_' + str(i)+'.pkl', 'w'))
+
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
