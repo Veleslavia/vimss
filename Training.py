@@ -38,6 +38,7 @@ def cfg():
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
                     "training_steps": 2000*1, # Number of training steps per training
                     "use_tpu": True,
+                    "load_model": True,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
