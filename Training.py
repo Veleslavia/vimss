@@ -214,10 +214,12 @@ def unet_separator(features, labels, mode, params):
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
     # Supervised objective: MSE in log-normalized magnitude space
+    separator_sources = tf.transpose(tf.stack(separator_sources), [1, 2, 3, 0])
+    sources = tf.transpose(sources, [1, 2, 3, 0])
     separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
 
     tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
-    sup_summaries = tf.summary.merge_all(key='sup')
+    #sup_summaries = tf.summary.merge_all(key='sup')
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
@@ -229,8 +231,6 @@ def unet_separator(features, labels, mode, params):
             mean_mse_loss = tf.metrics.mean_squared_error(labels, predictions)
             return {'mse': mean_mse_loss}
 
-        separator_sources = tf.transpose(tf.stack(separator_sources), [1, 2, 3, 0])
-        sources = tf.transpose(sources, [1, 2, 3, 0])
         eval_params = {'labels': sources,
                        'predictions': separator_sources}
 
