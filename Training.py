@@ -223,7 +223,7 @@ def unet_separator(features, labels, mode, params):
 
     #separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
 
-    tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
+    #tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
     #sup_summaries = tf.summary.merge_all(key='sup')
 
     # Creating evaluation estimator
@@ -261,11 +261,56 @@ def unet_separator(features, labels, mode, params):
         if model_config["use_tpu"]:
             separator_solver = tpu_optimizer.CrossShardOptimizer(separator_solver)
 
+        global_step = tf.train.get_global_step()
+        batches_per_epoch = 10000 / model_config["batch_size"]
+        current_epoch = (tf.cast(global_step, tf.float32) /
+                         batches_per_epoch)
+        learning_rate = sep_lr
+
+        def host_call_fn(gs, loss, lr, ce):
+            """Training host call. Creates scalar summaries for training metrics.
+            This function is executed on the CPU and should not directly reference
+            any Tensors in the rest of the `model_fn`. To pass Tensors from the
+            model to the `metric_fn`, provide as part of the `host_call`. See
+            https://www.tensorflow.org/api_docs/python/tf/contrib/tpu/TPUEstimatorSpec
+            for more information.
+            Arguments should match the list of `Tensor` objects passed as the second
+            element in the tuple passed to `host_call`.
+            Args:
+              gs: `Tensor with shape `[batch]` for the global_step
+              loss: `Tensor` with shape `[batch]` for the training loss.
+              lr: `Tensor` with shape `[batch]` for the learning_rate.
+              ce: `Tensor` with shape `[batch]` for the current_epoch.
+            Returns:
+              List of summary ops to run on the CPU host.
+            """
+            gs = gs[0]
+            with summary.create_file_writer(model_config["model_base_dir"]).as_default():
+                with summary.always_record_summaries():
+                    summary.scalar('loss', loss[0], step=gs)
+                    summary.scalar('learning_rate', lr[0], step=gs)
+                    summary.scalar('current_epoch', ce[0], step=gs)
+
+            return summary.all_summary_ops()
+
+        # To log the loss, current learning rate, and epoch for Tensorboard, the
+        # summary op needs to be run on the host CPU via host_call. host_call
+        # expects [batch_size, ...] Tensors, thus reshape to introduce a batch
+        # dimension. These Tensors are implicitly concatenated to
+        # [params['batch_size']].
+        gs_t = tf.reshape(global_step, [1])
+        loss_t = tf.reshape(separator_loss, [1])
+        lr_t = tf.reshape(learning_rate, [1])
+        ce_t = tf.reshape(current_epoch, [1])
+
+        host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t])
+
         train_op = separator_solver.minimize(separator_loss,
                                              var_list=separator_vars,
-                                             global_step=tf.train.get_global_step())
+                                             global_step=global_step)
         return tpu_estimator.TPUEstimatorSpec(mode=mode,
                                               loss=separator_loss,
+                                              host_call=host_call,
                                               train_op=train_op)
 
 
