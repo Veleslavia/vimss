@@ -84,7 +84,6 @@ class UnetAudioSeparator:
             for i in range(self.num_layers):
                 current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_initial_filters * i), self.filter_size, strides=1, activation=LeakyReLU, padding=self.padding) # out = in - filter + 1
                 enc_outputs.append(current_layer)
-                print(current_layer.shape)
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
 
             current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_initial_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding) # One more conv here since we need to compute features after last decimation
