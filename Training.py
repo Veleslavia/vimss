@@ -213,7 +213,11 @@ def unet_separator(features, labels, mode, params):
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {
-            'sources': separator_sources
+            'mix': mix,
+            'source_0': separator_sources[0],
+            'source_1': separator_sources[1],
+            'source_2': separator_sources[2],
+            'source_3': separator_sources[3]
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
@@ -371,10 +375,10 @@ def dsd_100_experiment(model_config):
             input_fn=musdb_eval.input_fn)
 
         for i, predicted_sources in enumerate(predictions):
-            for source_idx in predicted_sources.shape[0].value:
-                audio_path = "sample_{i}_source_{source_idx}".format(i=i, source_idx=source_idx)
-                librosa.output.write_wav(audio_path, predicted_sources[source_idx], model_config['expected_sr'])
-            if i == 100:
+            for skey in predicted_sources.keys():
+                audio_path = "sample_{i}_source_{skey}.wav".format(i=i, skey=skey)
+                librosa.output.write_wav(audio_path, predicted_sources[skey], model_config['expected_sr'])
+            if i == 10:
                 raise
 
 
