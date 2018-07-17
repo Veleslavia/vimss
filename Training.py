@@ -33,12 +33,12 @@ def cfg():
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "model_base_dir": "gs://vimsscheckpoints/baseline", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
-                    "batch_size": 16, # Batch size
+                    "batch_size": 64, # Batch size
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
-                    "training_steps": 2000*1, # Number of training steps per training
-                    "use_tpu": False,
-                    "load_model": True,
+                    "training_steps": 2000*50, # Number of training steps per training
+                    "use_tpu": True,
+                    "load_model": False,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -176,7 +176,7 @@ def unet_spectrogram_l1():
 @ex.capture
 def unet_separator(features, labels, mode, params):
     mix = features
-    sources = tf.transpose(labels, [3, 0, 1, 2])
+    sources = labels
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
     if model_config["network"] == "unet":
@@ -199,7 +199,7 @@ def unet_separator(features, labels, mode, params):
     pad = (sep_input_shape[1] - sep_output_shape[1])
     pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
     mix = tf.pad(mix, pad_tensor, "CONSTANT")
-    pad_tensor = tf.constant([[0, 0], [0, 0], [2, 3], [0, 0]])
+    pad_tensor = tf.constant([[0, 0], [2, 3], [0, 0], [0, 0]])
     sources = tf.pad(sources, pad_tensor, "CONSTANT")
 
     separator_func = separator_class.get_output
@@ -215,8 +215,13 @@ def unet_separator(features, labels, mode, params):
 
     # Supervised objective: MSE in log-normalized magnitude space
     separator_sources = tf.transpose(tf.stack(separator_sources), [1, 2, 3, 0])
-    sources = tf.transpose(sources, [1, 2, 3, 0])
-    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
+
+    separator_loss = tf.reduce_mean(
+        tf.reduce_mean(
+            tf.squared_difference(sources, separator_sources), axis=[0, 1, 2]),
+        axis=0)
+
+    #separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
 
     tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
     #sup_summaries = tf.summary.merge_all(key='sup')
@@ -281,9 +286,9 @@ def dsd_100_experiment(model_config):
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'],
-        save_checkpoints_steps=max(600, 500),
+        save_checkpoints_steps=100,
         tpu_config=tpu_config.TPUConfig(
-            iterations_per_loop=500,
+            iterations_per_loop=100,
             num_shards=8,
             per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
