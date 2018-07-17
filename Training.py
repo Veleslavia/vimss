@@ -28,19 +28,19 @@ ex = Experiment('Waveunet')
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path": "gs://vimsstfrecords/musdb18", # SET MUSDB PATH HERE
+    model_config = {"musdb_path": "gs://vimsstfrecords/musdb18context", # SET MUSDB PATH HERE
                     "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-                    "model_base_dir": "gs://vimsscheckpoints/baseline", # Base folder for model checkpoints
+                    "model_base_dir": "gs://vimsscheckpoints/baselinecontext", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 64, # Batch size
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
-                    "training_steps": 2000*50, # Number of training steps per training
-                    "evaluation_steps": 50,
-                    "use_tpu": False,
-                    "load_model": True,
-                    "predict_only": True,
+                    "training_steps": 2000*100, # Number of training steps per training
+                    "evaluation_steps": 1000,
+                    "use_tpu": True,
+                    "load_model": False,
+                    "predict_only": False,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
