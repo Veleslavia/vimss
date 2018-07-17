@@ -37,8 +37,10 @@ def cfg():
                     "init_sup_sep_lr": 1e-4, # Supervised separator learning rate
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
                     "training_steps": 2000*50, # Number of training steps per training
-                    "use_tpu": True,
-                    "load_model": False,
+                    "evaluation_steps": 50,
+                    "use_tpu": False,
+                    "load_model": True,
+                    "predict_only": True,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -199,13 +201,14 @@ def unet_separator(features, labels, mode, params):
     pad = (sep_input_shape[1] - sep_output_shape[1])
     pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
     mix = tf.pad(mix, pad_tensor, "CONSTANT")
-    pad_tensor = tf.constant([[0, 0], [2, 3], [0, 0], [0, 0]])
-    sources = tf.pad(sources, pad_tensor, "CONSTANT")
+    if mode != tf.estimator.ModeKeys.PREDICT:
+        pad_tensor = tf.constant([[0, 0], [2, 3], [0, 0], [0, 0]])
+        sources = tf.pad(sources, pad_tensor, "CONSTANT")
 
     separator_func = separator_class.get_output
 
     # Compute loss.
-    separator_sources = separator_func(mix, True, not model_config["raw_audio_loss"], reuse=False)
+    separator_sources = tf.stack(separator_func(mix, True, not model_config["raw_audio_loss"], reuse=False))
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {
@@ -214,25 +217,13 @@ def unet_separator(features, labels, mode, params):
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
     # Supervised objective: MSE in log-normalized magnitude space
-    separator_sources = tf.transpose(tf.stack(separator_sources), [1, 2, 3, 0])
+    separator_sources = tf.transpose(separator_sources, [1, 2, 3, 0])
 
-    separator_loss = tf.reduce_mean(
-        tf.reduce_mean(
-            tf.squared_difference(sources, separator_sources), axis=[0, 1, 2]),
-        axis=0)
-
-    #separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
-
-    #tf.summary.scalar("sep_loss", separator_loss, collections=["sup"])
-    #sup_summaries = tf.summary.merge_all(key='sup')
+    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
         def metric_fn(labels, predictions):
-            #mean_mse_loss = 0.0
-            #for i in range(sources.shape[0]):
-            #    mean_mse_loss += tf.reduce_mean(tf.square(sources[i] - separator_sources[i]))
-            #mean_mse_loss /= float(sources.shape[0].value) # Normalise by number of sources
             mean_mse_loss = tf.metrics.mean_squared_error(labels, predictions)
             return {'mse': mean_mse_loss}
 
@@ -364,17 +355,24 @@ def dsd_100_experiment(model_config):
 
     print("Supervised training finished!")
 
-    # Evaluate the model.
-    eval_result = separator.evaluate(
-        input_fn=musdb_eval.input_fn,
-        steps=1000)
+    if not model_config["predict_only"]:
+        print("Evaluate model")
+        # Evaluate the model.
+        eval_result = separator.evaluate(
+            input_fn=musdb_eval.input_fn,
+            steps=model_config['evaluation_steps'])
+    else:
+        print("Test results and save predicted sources:")
+        import librosa
+        predictions = separator.predict(
+            input_fn=musdb_eval.input_fn)
 
-    print("Test results and save predicted sources:")
-    predictions = separator.predict(
-        input_fn=musdb_eval.input_fn)
-
-    for i, predicted in enumerate(predictions):
-        pickle.dump(predicted, open('predicted_' + str(i)+'.pkl', 'w'))
+        for i, predicted_sources in enumerate(predictions):
+            for source_idx in predicted_sources.shape[0].value:
+                audio_path = "sample_{i}_source_{source_idx}".format(i=i, source_idx=source_idx)
+                librosa.output.write_wav(audio_path, predicted_sources[source_idx], model_config['expected_sr'])
+            if i == 100:
+                raise
 
 
 if __name__ == '__main__':
