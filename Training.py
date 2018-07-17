@@ -331,9 +331,9 @@ def dsd_100_experiment(model_config):
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'],
-        save_checkpoints_steps=100,
+        save_checkpoints_steps=500,
         tpu_config=tpu_config.TPUConfig(
-            iterations_per_loop=100,
+            iterations_per_loop=500,
             num_shards=8,
             per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
