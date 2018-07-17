@@ -198,9 +198,10 @@ def unet_separator(features, labels, mode, params):
 
     # Input context that the input audio has to be padded ON EACH SIDE
     # TODO move this to dataset function
-    pad = (sep_input_shape[1] - sep_output_shape[1])
-    pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
-    mix = tf.pad(mix, pad_tensor, "CONSTANT")
+    assert mix.shape[1].value == sep_input_shape
+    #pad = (sep_input_shape[1] - sep_output_shape[1])
+    #pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
+    #mix = tf.pad(mix, pad_tensor, "CONSTANT")
     if mode != tf.estimator.ModeKeys.PREDICT:
         pad_tensor = tf.constant([[0, 0], [2, 3], [0, 0], [0, 0]])
         sources = tf.pad(sources, pad_tensor, "CONSTANT")
@@ -217,7 +218,9 @@ def unet_separator(features, labels, mode, params):
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
     # Supervised objective: MSE in log-normalized magnitude space
-    separator_sources = tf.transpose(separator_sources, [1, 2, 3, 0])
+    #separator_sources = tf.transpose(separator_sources, [1, 2, 3, 0])
+    separator_sources = tf.reshape(separator_sources, [-1, 4])
+    sources = tf.reshape(sources, [-1, 4])
 
     separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
 

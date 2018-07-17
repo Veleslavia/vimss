@@ -50,8 +50,6 @@ CHANNELS = 1            # always work with mono!
 NUM_SOURCES = 4         # fix 4 sources for musdb + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
 
-pool = Pool(multiprocessing.cpu_count()-1)
-
 def make_shuffle_idx(n):
     order = list(range(n))
     random.shuffle(order)
@@ -118,7 +116,7 @@ def _get_segments_from_audio_cache(file_data_cache):
     segments = list()
     offset = (MIX_WITH_PADDING - NUM_SAMPLES)//2
     start_idx = offset
-    end_idx = file_data_cache[0][1] - offset
+    end_idx = file_data_cache[0][1] - offset - 1
     for sample_idx in range((end_idx - start_idx)//NUM_SAMPLES):
         # sampling segments, ignore first and last incomplete segments
         # notice that we sample MIX_WITH_PADDING from the mix and central cropped NUM_SAMPLES from the sources
@@ -126,7 +124,7 @@ def _get_segments_from_audio_cache(file_data_cache):
         sample_offset_start = start_idx + sample_idx*NUM_SAMPLES
         sample_offset_end = start_idx + (sample_idx+1)*NUM_SAMPLES
         # adding big datasample for mix
-        segments_data.append(file_data_cache[0][2][sample_offset_start-offset:sample_offset_end+offset])
+        segments_data.append(file_data_cache[0][2][sample_offset_start-offset:sample_offset_end+offset+1])
         # adding rest of the sources
         assert len(segments_data[0]) == MIX_WITH_PADDING
         for source in file_data_cache[1:]:
@@ -135,14 +133,15 @@ def _get_segments_from_audio_cache(file_data_cache):
     return segments
 
 
-def _process_audio_files_batch(chunk_files, output_file):
+def _process_audio_files_batch(chunk_data):
     """Processes and saves list of audio files as TFRecords.
     Args:
+        chunk_data: tuple of chunk_files and output_file
         chunk_files: list of strings; each string is a path to an image file
-        coder: instance of AudioCoder to provide audio coding utils.
         output_file: string, unique identifier specifying the data set
     """
 
+    chunk_files, output_file = chunk_data[0], chunk_data[1]
     # Get training files from the directory name
 
     writer = tf.python_io.TFRecordWriter(output_file)
@@ -198,6 +197,8 @@ def _process_dataset(filenames,
     _check_or_create_dir(output_directory)
     chunksize = int(math.ceil(len(filenames) / num_shards))
 
+    pool = Pool(multiprocessing.cpu_count()-1)
+
     def output_file(shard_idx):
         return os.path.join(output_directory, '%s-%.5d-of-%.5d' % (prefix, shard_idx, num_shards))
 
@@ -205,7 +206,7 @@ def _process_dataset(filenames,
     chunk_data = [(filenames[shard * chunksize: (shard + 1) * chunksize],
                    output_file(shard)) for shard in range(num_shards)]
 
-    files = pool.map_async(_process_audio_files_batch, chunk_data)
+    files = pool.map(_process_audio_files_batch, chunk_data)
 
     return files
 
