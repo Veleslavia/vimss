@@ -1,6 +1,8 @@
 import math
 import os
 import random
+import multiprocessing
+from multiprocessing import Pool
 
 from absl import flags
 import tensorflow as tf
@@ -15,11 +17,11 @@ from google.cloud import storage
 flags.DEFINE_string(
     'project', 'plated-dryad-162216', 'Google cloud project id for uploading the dataset.')
 flags.DEFINE_string(
-    'gcs_output_path', 'gs://vimsstfrecords/musdb18', 'GCS path for uploading the dataset.')
+    'gcs_output_path', 'gs://vimsstfrecords/musdb18/context', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
-    'local_scratch_dir', '/mnt/disks/vimsstmp/tfrecords', 'Scratch directory path for temporary files.')
+    'local_scratch_dir', '/mnt/disks/vimsstmp2/tfrecords', 'Scratch directory path for temporary files.')
 flags.DEFINE_string(
-    'raw_data_dir', '/mnt/disks/vimsstmp/musdb18', 'Directory path for raw MUSDB dataset. '
+    'raw_data_dir', '/mnt/disks/vimsstmp2/musdb18', 'Directory path for raw MUSDB dataset. '
     'Should have train and test subdirectories inside it.')
 
 
@@ -41,10 +43,14 @@ TEST_SHARDS = 12
 CHANNEL_NAMES = ['.stem_mix.wav', '.stem_vocals.wav', '.stem_bass.wav', '.stem_drums.wav', '.stem_other.wav']
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
+# this is the proper size for mix input if "context" is set for NUM_SAMPLES = 16384
+# Actually, output will be 16389 but nobody cares
+MIX_WITH_PADDING = 147443
 CHANNELS = 1            # always work with mono!
 NUM_SOURCES = 4         # fix 4 sources for musdb + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
 
+pool = Pool(multiprocessing.cpu_count()-1)
 
 def make_shuffle_idx(n):
     order = list(range(n))
@@ -110,10 +116,21 @@ def _get_segments_from_audio_cache(file_data_cache):
             each one contains file_basename, sample_idx, 5 raw data audio frames in a single list
     """
     segments = list()
-    for sample_idx in range(file_data_cache[0][1]//NUM_SAMPLES): # sampling segments, ignore the last incomplete segment
+    offset = (MIX_WITH_PADDING - NUM_SAMPLES)//2
+    start_idx = offset
+    end_idx = file_data_cache[0][1] - offset
+    for sample_idx in range((end_idx - start_idx)//NUM_SAMPLES):
+        # sampling segments, ignore first and last incomplete segments
+        # notice that we sample MIX_WITH_PADDING from the mix and central cropped NUM_SAMPLES from the sources
         segments_data = list()
-        for source in file_data_cache:
-            segments_data.append(source[2][sample_idx*NUM_SAMPLES:(sample_idx+1)*NUM_SAMPLES])
+        sample_offset_start = start_idx + sample_idx*NUM_SAMPLES
+        sample_offset_end = start_idx + (sample_idx+1)*NUM_SAMPLES
+        # adding big datasample for mix
+        segments_data.append(file_data_cache[0][2][sample_offset_start-offset:sample_offset_end+offset])
+        # adding rest of the sources
+        assert len(segments_data[0]) == MIX_WITH_PADDING
+        for source in file_data_cache[1:]:
+            segments_data.append(source[2][sample_offset_start:sample_offset_end])
         segments.append([file_data_cache[0][0], sample_idx, segments_data])
     return segments
 
@@ -160,6 +177,7 @@ def _process_audio_files_batch(chunk_files, output_file):
         writer.write(example.SerializeToString())
 
     writer.close()
+    tf.logging.info('Finished writing file: %s' % output_file)
 
 
 def _process_dataset(filenames,
@@ -180,16 +198,14 @@ def _process_dataset(filenames,
     _check_or_create_dir(output_directory)
     chunksize = int(math.ceil(len(filenames) / num_shards))
 
-    files = []
+    def output_file(shard_idx):
+        return os.path.join(output_directory, '%s-%.5d-of-%.5d' % (prefix, shard_idx, num_shards))
 
-    for shard in range(num_shards):
-        chunk_files = filenames[shard * chunksize: (shard + 1) * chunksize]
-        output_file = os.path.join(
-            output_directory, '%s-%.5d-of-%.5d' % (prefix, shard, num_shards))
-        _process_audio_files_batch(chunk_files, output_file)
+    # chunk data consists of chunk_filenames and output_file
+    chunk_data = [(filenames[shard * chunksize: (shard + 1) * chunksize],
+                   output_file(shard)) for shard in range(num_shards)]
 
-        tf.logging.info('Finished writing file: %s' % output_file)
-        files.append(output_file)
+    files = pool.map_async(_process_audio_files_batch, chunk_data)
 
     return files
 
