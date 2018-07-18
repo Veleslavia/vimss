@@ -198,7 +198,7 @@ def unet_separator(features, labels, mode, params):
 
     # Input context that the input audio has to be padded ON EACH SIDE
     # TODO move this to dataset function
-    assert mix.shape[1].value == sep_input_shape
+    assert mix.shape[1].value == sep_input_shape[1]
     #pad = (sep_input_shape[1] - sep_output_shape[1])
     #pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
     #mix = tf.pad(mix, pad_tensor, "CONSTANT")
@@ -265,7 +265,7 @@ def unet_separator(features, labels, mode, params):
                          batches_per_epoch)
         learning_rate = sep_lr
 
-        def host_call_fn(gs, loss, lr, ce):
+        def host_call_fn(gs, loss, lr, ce, input, gt_sources, est_sources):
             """Training host call. Creates scalar summaries for training metrics.
             This function is executed on the CPU and should not directly reference
             any Tensors in the rest of the `model_fn`. To pass Tensors from the
@@ -279,6 +279,9 @@ def unet_separator(features, labels, mode, params):
               loss: `Tensor` with shape `[batch]` for the training loss.
               lr: `Tensor` with shape `[batch]` for the learning_rate.
               ce: `Tensor` with shape `[batch]` for the current_epoch.
+              input: `Tensor` with shape `[batch, mix_samples, 1]`
+              gt_sources: `Tensor` with shape `[batch, output_samples, 4]`
+              est_sources: `Tensor` with shape `[batch, output_samples, 4]`
             Returns:
               List of summary ops to run on the CPU host.
             """
@@ -288,6 +291,10 @@ def unet_separator(features, labels, mode, params):
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
                     summary.scalar('current_epoch', ce[0], step=gs)
+
+            tf.Print(input)
+            tf.Print(gt_sources)
+            tf.Print(est_sources)
 
             return summary.all_summary_ops()
 
@@ -300,8 +307,11 @@ def unet_separator(features, labels, mode, params):
         loss_t = tf.reshape(separator_loss, [1])
         lr_t = tf.reshape(learning_rate, [1])
         ce_t = tf.reshape(current_epoch, [1])
+        mix = tf.reshape(mix, [sep_input_shape[1]])
+        gt_sources = tf.reshape(sources, [-1, 4])
+        est_sources = tf.reshape(separator_sources, [-1, 4])
 
-        host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t])
+        host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t, mix, gt_sources, est_sources])
 
         train_op = separator_solver.minimize(separator_loss,
                                              var_list=separator_vars,
@@ -350,7 +360,8 @@ def dsd_100_experiment(model_config):
         train_batch_size=model_config['batch_size'],
         eval_batch_size=model_config['batch_size'],
         predict_batch_size=model_config['batch_size'],
-        params={i: model_config[i] for i in model_config if i != 'batch_size'})
+        params={i: model_config[i] for i in model_config if i != 'batch_size'}
+    )
 
     # Train the Model.
     if model_config['load_model']:
