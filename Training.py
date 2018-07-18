@@ -291,11 +291,9 @@ def unet_separator(features, labels, mode, params):
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
                     summary.scalar('current_epoch', ce[0], step=gs)
-
-            tf.Print(input)
-            tf.Print(gt_sources)
-            tf.Print(est_sources)
-
+                    summary.audio('mix', input, model_config['expected_sr'], max_outputs=1)
+                    summary.audio('gt_sources', gt_sources, model_config['expected_sr'], max_outputs=4)
+                    summary.audio('est_sources', est_sources, model_config['expected_sr'], max_outputs=4)
             return summary.all_summary_ops()
 
         # To log the loss, current learning rate, and epoch for Tensorboard, the
@@ -307,7 +305,7 @@ def unet_separator(features, labels, mode, params):
         loss_t = tf.reshape(separator_loss, [1])
         lr_t = tf.reshape(learning_rate, [1])
         ce_t = tf.reshape(current_epoch, [1])
-        mix = tf.reshape(mix, [sep_input_shape[1]])
+        mix = tf.reshape(mix, [-1, sep_input_shape[1]])
         gt_sources = tf.reshape(sources, [-1, 4])
         est_sources = tf.reshape(separator_sources, [-1, 4])
 
