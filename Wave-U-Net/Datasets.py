@@ -17,9 +17,9 @@ import musdb
 def subtract_audio(mix_list, instrument_list):
     '''
     Generates new audio by subtracting the audio signal of an instrument recording from a mixture
-    :param mix_list:
-    :param instrument_list:
-    :return:
+    :param mix_list: 
+    :param instrument_list: 
+    :return: 
     '''
 
     assert(len(mix_list) == len(instrument_list))
@@ -129,8 +129,8 @@ def getMUSDB(database_path):
             # Get mix and instruments
             # Bass
             bass_path = track.path[:-4] + "_bass.wav"
-            bass_audio, bass_rate = soundfile.read(bass_path, always_2d=True)
-            bass_duration = bass_audio.shape[0] / bass_rate
+            bass_audio, bass_rate = soundfile.read(bass_path, always_2d=True)    
+            bass_duration = bass_audio.shape[0] / bass_rate            
             bass = Sample(bass_path, bass_rate, bass_audio.shape[1], bass_duration)
 
             # Drums
