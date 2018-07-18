@@ -179,7 +179,7 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
 
     return source_preds
 
-def produce_source_estimates(model_config, load_model, musdb_path, output_path, subsets=None):
+def produce_source_estimates(model_config, load_model, urmpv2_path, output_path, subsets=None):
     '''
     Predicts source estimates for MUSDB for a given model checkpoint and configuration, and evaluate them.
     :param model_config: Model configuration of the model to be evaluated
@@ -190,7 +190,7 @@ def produce_source_estimates(model_config, load_model, musdb_path, output_path, 
     with open("prediction_params.pkl", "wb") as file:
         pickle.dump(prediction_parameters, file)
 
-    mus = musdb.DB(root_dir=musdb_path)
+    mus = musdb.DB(root_dir=urmpv2_path)
     #if mus.test(predict):
     #    print "Function is valid"
     mus.run(predict, estimates_dir=output_path, subsets=subsets)

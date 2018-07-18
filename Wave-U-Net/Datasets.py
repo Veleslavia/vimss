@@ -173,6 +173,73 @@ def getMUSDB(database_path):
 
     return subsets
 
+def getURMPV2(database_path):
+
+    # Silent file used for instrument sources not present in the file
+    silence_path='/mnt/disks/datasets/silence.wav'
+
+    # Instrument source to index mapping
+    source_map = {
+        'mix': 0,
+        'bn': 1,
+        'cl': 2,
+        'db': 3,
+        'fl': 4,
+        'hn': 5,
+        'ob': 6,
+        'sax': 7,
+        'tba': 8,
+        'tbn': 9,
+        'tpt': 10,
+        'va': 11,
+        'vc': 12,
+        'vn': 13,
+    }
+
+    subsets = []
+    for subset in ["train", "test"]:
+        subset_dir = os.path.join(database_path, subset)
+        track_list = []
+
+        # Iterate through each tracks
+        for folder in os.listdir(subset_dir):
+            track_sources = [0 for i in range(14)]  # 1st index must be mix source + 13 individual sources
+
+            # Create Sample object for each instrument source files present
+            for filename in os.listdir(os.path.join(subset_dir, folder)):
+                if filename.endswith(".wav"):
+                    if filename.startswith("AuMix"):
+                        # Place mix source to the first index
+                        mix_path = os.path.join(subset_dir, folder, filename)
+                        mix_audio, mix_rate = soundfile.read(mix_path, always_2d=True)
+                        mix_duration = mix_audio.shape[0] / mix_rate
+                        mix = Sample(mix_path, mix_rate, mix_audio.shape[1], mix_duration)
+                        track_sources.insert(0, mix)
+                    else:
+                        # Place Sample object mapping to its instrument index
+                        source_name = filename.split('_')[2]
+                        source_idx = source_map[source_name]
+                        source_path = os.path.join(subset_dir, folder, filename)
+                        source_audio, source_rate = soundfile.read(source_path, always_2d=True)
+                        source_duration = source_audio.shape[0] / source_rate
+                        source = Sample(source_path, source_rate, source_audio.shape[1], source_duration)
+                        track_sources.insert(source_idx, source)
+
+            # Create and insert silence Sample object for instruments not present in the track
+            silence_audio, silence_rate = soundfile.read(silence_path, always_2d=True)
+            silence_duration = silence_audio.shape[0] / silence_rate
+            silence = Sample(silence_path, silence_rate, silence_audio.shape[1], silence_duration)
+
+            for i, track in enumerate(track_sources):
+                if track == 0:
+                    track_sources[i] = silence
+
+            # Cast to tuple to match the dataset.pkl format
+            track_list.append(tuple(track_sources))
+        subsets.append(track_list)
+
+    return subsets
+
 
 def getFMAGenre(genre_id, database_path, audio_path=None):
     if audio_path is None:

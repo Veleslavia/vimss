@@ -23,10 +23,9 @@ ex = Experiment('Waveunet')
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path" : "/mnt/disks/datasets/musdb18", # SET MUSDB PATH HERE, AND SET CCMIXTER PATH IN CCMixter.xml
-                    "estimates_path" : "/mnt/disks/datasets/musdb-source-estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-
-                    "model_base_dir" : "/mnt/disks/musdb-gpu-checkpoints", # Base folder for model checkpoints
+    model_config = {"urmpv2_path" : "/mnt/disks/datasets/urmpv2", # Modified URMP Download from gs://vimssdatasets/urmpv2/
+                    "estimates_path" : "/mnt/disks/datasets/urmpv2-source-estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
+                    "model_base_dir" : "/mnt/disks/urmpv2-gpu-checkpoints", # Base folder for model checkpoints
                     "log_dir" : "logs", # Base folder for logs files
                     "batch_size" : 16, # Batch size
                     "init_sup_sep_lr" : 1e-4, # Supervised separator learning rate
@@ -54,7 +53,7 @@ def cfg():
     seed=1337
     experiment_id = np.random.randint(0,1000000)
 
-    model_config["num_sources"] = 4 if model_config["task"] == "multi_instrument" else 2
+    model_config["num_sources"] = 13 if model_config["task"] == "multi_instrument" else 2
     model_config["num_channels"] = 1 if model_config["mono_downmix"] else 2
 
 @ex.named_config
@@ -310,7 +309,6 @@ def train(model_config, experiment_id, sup_dataset, unsup_dataset=None, load_mod
 def optimise(model_config, experiment_id, dataset):
     epoch = 0
     best_loss = 10000
-    # model_path = '/mnt/disks/musdb-gpu-checkpoints/625589/625589-2001.meta'
     model_path = None
     best_model_path = None
     for i in range(2):
@@ -352,13 +350,13 @@ def dsd_100_experiment(model_config):
             dataset = pickle.load(file)
         print("Loaded dataset from pickle!")
     else:
-        dsd_train, dsd_test = Datasets.getMUSDB(model_config["musdb_path"])
+        dsd_train, dsd_test = Datasets.getURMPV2(model_config['urmpv2_path'])
         ccm = Datasets.getCCMixter("CCMixter.xml")
 
-        # Pick 25 random songs for validation from MUSDB train set (this is always the same selection each time since we fix the random seed!)
+        # Pick 25 random songs for validation from URMP train set (this is always the same selection each time since we fix the random seed!)
         val_idx = np.random.choice(len(dsd_train), size=25, replace=False)
         train_idx = [i for i in range(len(dsd_train)) if i not in val_idx]
-        print("Validation with MUSDB training songs no. " + str(train_idx))
+        print("Validation with URMP training songs no. " + str(train_idx))
 
         # Draw randomly from datasets
         dataset = dict()
@@ -368,10 +366,14 @@ def dsd_100_experiment(model_config):
         dataset["test"] = dsd_test
 
         with open('dataset.pkl', 'wb') as file:
-            pickle.dump(dataset,file)
+            pickle.dump(dataset, file)
         print("Created dataset structure")
 
+
     # Setup dataset depending on task. Dataset contains sources in order: (mix, acc, bass, drums, other, vocal)
+    # Setup dataset depending on task. Dataset contains sources in order:
+    # (mix, bn, cl, db, fl, hn, ob, sax, tba, tbn, tpt, va, vc, vn)
+
     if model_config["task"] == "voice":
         for i in range(75):
             dataset["train_sup"][i] = (dataset["train_sup"][i][0], dataset["train_sup"][i][1], dataset["train_sup"][i][5])
@@ -379,12 +381,23 @@ def dsd_100_experiment(model_config):
             for i in range(len(dataset[subset])):
                 dataset[subset][i] = (dataset[subset][i][0], dataset[subset][i][1], dataset[subset][i][5])
     else: # Multitask - Remove CCMixter from training, and acc source
-        dataset["train_sup"] = dataset["train_sup"][:75]
         for subset in ["train_sup", "valid", "test"]:
             for i in range(len(dataset[subset])):
-                dataset[subset][i] = (dataset[subset][i][0], dataset[subset][i][2], dataset[subset][i][3], dataset[subset][i][4], dataset[subset][i][5])
+                dataset[subset][i] = (dataset[subset][i][0],
+                                      dataset[subset][i][2],
+                                      dataset[subset][i][3],
+                                      dataset[subset][i][4],
+                                      dataset[subset][i][5],
+                                      dataset[subset][i][6],
+                                      dataset[subset][i][7],
+                                      dataset[subset][i][8],
+                                      dataset[subset][i][9],
+                                      dataset[subset][i][10],
+                                      dataset[subset][i][11],
+                                      dataset[subset][i][12],
+                                      dataset[subset][i][13])
 
     # Optimize in a +supervised fashion until validation loss worsens
     sup_model_path, sup_loss = optimise(dataset=dataset)
     print("Supervised training finished! Saved model at " + sup_model_path + ". Performance: " + str(sup_loss))
-    Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["musdb_path"], model_config["estimates_path"], "train")
+    Evaluate.produce_source_estimates(model_config, sup_model_path, model_config["urmpv2_path"], model_config["estimates_path"], "train")
