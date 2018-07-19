@@ -67,7 +67,7 @@ Taking as a basis the models proposed in [2] and [3], we would like to
 
 ## Team
 
-- *Leo Kim* (@leobkim),  University of Waterloo 
+- *Leo Kim* (@leoybkim),  University of Waterloo 
 - *Olga Slizovskaia* (@veleslavia), Pompeu Fabra University
 
 ## Paper link
