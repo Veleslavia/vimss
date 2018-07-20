@@ -1,7 +1,8 @@
 import math
 import os
 import random
-
+import multiprocessing
+from multiprocessing import Pool
 from absl import flags
 import tensorflow as tf
 # options for reading wav file
@@ -15,11 +16,11 @@ from google.cloud import storage
 flags.DEFINE_string(
     'project', 'jeju-dl', 'Google cloud project id for uploading the dataset.')
 flags.DEFINE_string(
-    'gcs_output_path', 'gs://urmp-tfrecords/urmp', 'GCS path for uploading the dataset.')
+    'gcs_output_path', 'gs://urmp-tfrecords-context/urmpv2', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
-    'local_scratch_dir', '/mnt/disk-datasets/tfrecords', 'Scratch directory path for temporary files.')
+    'local_scratch_dir', '/mnt/disk-datasets/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
 flags.DEFINE_string(
-    'raw_data_dir', '/mnt/disk-datasets/urmp', 'Directory path for raw URMP dataset. '
+    'raw_data_dir', '/mnt/disk-datasets/urmpv2', 'Directory path for raw URMP dataset. '
     'Should have train and test subdirectories inside it.')
 
 
@@ -38,11 +39,14 @@ TEST_DIRECTORY = 'test'
 TRAINING_SHARDS = 30
 TEST_SHARDS = 14
 
-# CHANNEL_NAMES = ['.stem_mix.wav', '.stem_vocals.wav', '.stem_bass.wav', '.stem_drums.wav', '.stem_other.wav']
+CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav', '.stem_fl.wav', '.stem_hn.wav', '.stem_ob.wav', 
+                 '.stem_sax.wav', '.stem_tba.wav', '.stem_tbn.wav', '.stem_tpt.wav', '.stem_va.wav', '.stem_vc.wav', '.stem_vn.wav']
+
+MIX_WITH_PADDING = 147443
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
 CHANNELS = 1            # always work with mono!
-# NUM_SOURCES = 4         # fix 4 sources for musdb + mix
+NUM_SOURCES = 13         # fix 4 sources for musdb + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
 
 
@@ -110,22 +114,34 @@ def _get_segments_from_audio_cache(file_data_cache):
             each one contains file_basename, sample_idx, 5 raw data audio frames in a single list
     """
     segments = list()
-    for sample_idx in range(file_data_cache[0][1]//NUM_SAMPLES): # sampling segments, ignore the last incomplete segment
+    offset = (MIX_WITH_PADDING - NUM_SAMPLES)//2
+    start_idx = offset
+    end_idx = file_data_cache[0][1] - offset - 1
+    for sample_idx in range((end_idx - start_idx)//NUM_SAMPLES):        
+        # sampling segments, ignore first and last incomplete segments
+        # notice that we sample MIX_WITH_PADDING from the mix and central cropped NUM_SAMPLES from the sources
         segments_data = list()
-        for source in file_data_cache:
-            segments_data.append(source[2][sample_idx*NUM_SAMPLES:(sample_idx+1)*NUM_SAMPLES])
+        sample_offset_start = start_idx + sample_idx*NUM_SAMPLES
+        sample_offset_end = start_idx + (sample_idx+1)*NUM_SAMPLES
+        # adding big datasample for mix
+        segments_data.append(file_data_cache[0][2][sample_offset_start-offset:sample_offset_end+offset+1])
+        # adding rest of the sources
+        assert len(segments_data[0]) == MIX_WITH_PADDING
+        for source in file_data_cache[1:]:
+            segments_data.append(source[2][sample_offset_start:sample_offset_end])
         segments.append([file_data_cache[0][0], sample_idx, segments_data, len(file_data_cache)-1])
     return segments
 
 
-def _process_audio_files_batch(chunk_files, output_file):
+def _process_audio_files_batch(chunk_data):
     """Processes and saves list of audio files as TFRecords.
     Args:
-        chunk_files: list of strings; each string is a path to an audio file
-        coder: instance of AudioCoder to provide audio coding utils.
+        chunk_data: tuple of chunk_files and output_file
+        chunk_files: list of strings; each string is a path to an wav file
         output_file: string, unique identifier specifying the data set
     """
 
+    chunk_files, output_file = chunk_data[0], chunk_data[1]
     # Get training files from the directory name
 
     writer = tf.python_io.TFRecordWriter(output_file)
@@ -161,7 +177,7 @@ def _process_audio_files_batch(chunk_files, output_file):
         writer.write(example.SerializeToString())
 
     writer.close()
-
+    tf.logging.info('Finished writing file: %s' % output_file)
 
 def _process_dataset(filenames,
                      output_directory,
@@ -181,16 +197,16 @@ def _process_dataset(filenames,
     _check_or_create_dir(output_directory)
     chunksize = int(math.ceil(len(filenames) / num_shards))
 
-    files = []
+    pool = Pool(multiprocessing.cpu_count()-1)
 
-    for shard in range(num_shards):
-        chunk_files = filenames[shard * chunksize: (shard + 1) * chunksize]
-        output_file = os.path.join(
-            output_directory, '%s-%.5d-of-%.5d' % (prefix, shard, num_shards))
-        _process_audio_files_batch(chunk_files, output_file)
+    def output_file(shard_idx):
+        return os.path.join(output_directory, '%s-%.5d-of-%.5d' % (prefix, shard_idx, num_shards))
 
-        tf.logging.info('Finished writing file: %s' % output_file)
-        files.append(output_file)
+    # chunk data consists of chunk_filenames and output_file
+    chunk_data = [(filenames[shard * chunksize: (shard + 1) * chunksize],
+                  output_file(shard)) for shard in range(num_shards)]
+
+    files = pool.map(_process_audio_files_batch, chunk_data)
 
     return files
 
