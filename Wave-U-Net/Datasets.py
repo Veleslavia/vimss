@@ -238,7 +238,7 @@ def getURMPV2(database_path):
             track_list.append(tuple(track_sources))
         subsets.append(track_list)
 
-    return subsets
+    return subsets[0], subsets[1]
 
 
 def getFMAGenre(genre_id, database_path, audio_path=None):

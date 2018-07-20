@@ -354,13 +354,13 @@ def dsd_100_experiment(model_config):
         ccm = Datasets.getCCMixter("CCMixter.xml")
 
         # Pick 25 random songs for validation from URMP train set (this is always the same selection each time since we fix the random seed!)
-        val_idx = np.random.choice(len(dsd_train), size=25, replace=False)
+        val_idx = np.random.choice(len(dsd_train), size=5, replace=False)
         train_idx = [i for i in range(len(dsd_train)) if i not in val_idx]
         print("Validation with URMP training songs no. " + str(train_idx))
 
         # Draw randomly from datasets
         dataset = dict()
-        dataset["train_sup"] = [dsd_train[i] for i in train_idx] + ccm
+        dataset["train_sup"] = [dsd_train[i] for i in train_idx]
         dataset["train_unsup"] = list() #[dsd_train[0][25:], dsd_train[1][25:], dsd_train[2][25:]] #[fma, list(), looperman]
         dataset["valid"] = [dsd_train[i] for i in val_idx]
         dataset["test"] = dsd_test
@@ -383,9 +383,10 @@ def dsd_100_experiment(model_config):
     else: # Multitask - Remove CCMixter from training, and acc source
         for subset in ["train_sup", "valid", "test"]:
             for i in range(len(dataset[subset])):
-                dataset[subset][i] = (dataset[subset][i][0],
+
+                dataset[subset][i] = (dataset[subset][i][1],
                                       dataset[subset][i][2],
-                                      dataset[subset][i][3],
+                                      dataset[subset][i][3], # out of range
                                       dataset[subset][i][4],
                                       dataset[subset][i][5],
                                       dataset[subset][i][6],
