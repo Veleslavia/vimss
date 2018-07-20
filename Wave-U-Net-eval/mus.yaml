@@ -1,0 +1,34 @@
+# SISEC MUS 2018 Configuration
+
+# Define the Input sources for each track
+sources:
+    vocals: vocals.wav
+    drums: drums.wav
+    bass: bass.wav
+    other: other.wav
+
+# Additionally provide the artistic mix
+mixture:
+    mixture.wav
+
+stem_ids:
+    mixture: 0
+    drums: 1
+    bass: 2
+    other: 3
+    vocals: 4
+
+# Define output targets to be tested using linear mixtures
+targets:
+    vocals:
+        vocals: 1
+    drums:
+        drums: 1
+    bass:
+        bass: 1
+    other:
+        other: 1
+    accompaniment:
+        bass: 1
+        drums: 1
+        other: 1
