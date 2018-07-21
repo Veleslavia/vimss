@@ -1,7 +1,5 @@
 from sacred import Experiment
-import pickle
 import tensorflow as tf
-from tensorflow.contrib import tpu
 import numpy as np
 import os
 
@@ -9,19 +7,13 @@ from Input import musdb_input
 import Utils
 import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
-import Test
-import Evaluate
 
-import functools
 from tensorflow.contrib.cluster_resolver import TPUClusterResolver
 from tensorflow.contrib import summary
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
-from tensorflow.contrib.training.python.training import evaluation
 from tensorflow.python.estimator import estimator
-
-#tf.enable_eager_execution()
 
 ex = Experiment('Waveunet')
 
@@ -31,7 +23,7 @@ def cfg():
     model_config = {"musdb_path": "gs://vimsstfrecords/musdb18context", # SET MUSDB PATH HERE
                     "estimates_path": "gs://vimsscheckpoints", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-                    "model_base_dir": "gs://vimsscheckpoints/baselinecontext_noaudiosum", # Base folder for model checkpoints
+                    "model_base_dir": "gs://vimsscheckpoints/", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 64, # Batch size
                     "init_sup_sep_lr": 1e-5, # Supervised separator learning rate
@@ -41,6 +33,7 @@ def cfg():
                     "use_tpu": True,
                     "load_model": False,
                     "predict_only": False,
+                    "audio_summaries_every_n_steps": 10000,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -71,20 +64,6 @@ def cfg():
 def baseline():
     print("Training baseline model")
 
-@ex.named_config
-def baseline_diff():
-    print("Training baseline model with difference output")
-    model_config = {
-        "output_type" : "difference"
-    }
-
-@ex.named_config
-def baseline_context():
-    print("Training baseline model with difference output and input context (valid convolutions)")
-    model_config = {
-        "output_type" : "difference",
-        "context" : True
-    }
 
 @ex.named_config
 def baseline_stereo():
@@ -95,26 +74,6 @@ def baseline_stereo():
         "mono_downmix" : False
     }
 
-@ex.named_config
-def full():
-    print("Training full singing voice separation model, with difference output and input context (valid convolutions) and stereo input/output, and learned upsampling layer")
-    model_config = {
-        "output_type" : "difference",
-        "context" : True,
-        "upsampling": "learned",
-        "mono_downmix" : False
-    }
-
-@ex.named_config
-def baseline_context_smallfilter_deep():
-    model_config = {
-        "output_type": "difference",
-        "context": True,
-        "num_layers" : 14,
-        "duration" : 7,
-        "filter_size" : 5,
-        "merge_filter_size" : 1
-    }
 
 @ex.named_config
 def full_multi_instrument():
@@ -143,40 +102,43 @@ def baseline_comparison():
         "num_initial_filters" : 34
     }
 
-@ex.named_config
-def unet_spectrogram():
-    model_config = {
-        "batch_size": 4, # Less output since model is so big.
-        "cache_size": 4,
-        "min_replacement_rate" : 4,
-
-        "network" : "unet_spectrogram",
-        "num_layers" : 6,
-        "expected_sr" : 8192,
-        "num_frames" : 768 * 127 + 1024, # hop_size * (time_frames_of_spectrogram_input - 1) + fft_length
-        "duration" : 13,
-        "num_initial_filters" : 16
-    }
-
-@ex.named_config
-def unet_spectrogram_l1():
-    model_config = {
-        "batch_size": 4, # Less output since model is so big.
-        "cache_size": 4,
-        "min_replacement_rate" : 4,
-
-        "network" : "unet_spectrogram",
-        "num_layers" : 6,
-        "expected_sr" : 8192,
-        "num_frames" : 768 * 127 + 1024, # hop_size * (time_frames_of_spectrogram_input - 1) + fft_length
-        "duration" : 13,
-        "num_initial_filters" : 16,
-        "loss" : "magnitudes"
-    }
-
-
 @ex.capture
-def unet_separator(features, labels, mode, params):
+def unet_separator(features, labels, mode, params, experiment_id):
+
+    # Define host call function
+    def host_call_fn(gs, loss, lr, mix, gt_sources, est_sources):
+            """Training host call. Creates scalar summaries for training metrics.
+            This function is executed on the CPU and should not directly reference
+            any Tensors in the rest of the `model_fn`. To pass Tensors from the
+            model to the `metric_fn`, provide as part of the `host_call`. See
+            https://www.tensorflow.org/api_docs/python/tf/contrib/tpu/TPUEstimatorSpec
+            for more information.
+            Arguments should match the list of `Tensor` objects passed as the second
+            element in the tuple passed to `host_call`.
+            Args:
+              gs: `Tensor with shape `[batch]` for the global_step
+              loss: `Tensor` with shape `[batch]` for the training loss.
+              lr: `Tensor` with shape `[batch]` for the learning_rate.
+              input: `Tensor` with shape `[batch, mix_samples, 1]`
+              gt_sources: `Tensor` with shape `[batch, sources_n, output_samples, 1]`
+              est_sources: `Tensor` with shape `[batch, sources_n, output_samples, 1]`
+            Returns:
+              List of summary ops to run on the CPU host.
+            """
+            gs = gs[0]
+            with summary.create_file_writer(model_config["model_base_dir"]+os.path.sep+str(experiment_id)).as_default():
+                with summary.always_record_summaries():
+                    summary.scalar('loss', loss[0], step=gs)
+                    summary.scalar('learning_rate', lr[0], step=gs)
+                with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
+                    summary.audio('mix', mix, model_config['expected_sr'], max_outputs=4)
+                    for source_id in range(gt_sources.shape[1].value):
+                        summary.audio('gt_sources_{source_id}'.format(source_id=source_id), gt_sources[:, source_id, :, :],
+                                      model_config['expected_sr'], max_outputs=4)
+                        summary.audio('est_sources_{source_id}'.format(source_id=source_id), est_sources[:, source_id, :, :],
+                                      model_config['expected_sr'], max_outputs=4)
+            return summary.all_summary_ops()
+
     mix = features
     sources = labels
     model_config = params
@@ -199,9 +161,6 @@ def unet_separator(features, labels, mode, params):
     # Input context that the input audio has to be padded ON EACH SIDE
     # TODO move this to dataset function
     assert mix.shape[1].value == sep_input_shape[1]
-    #pad = (sep_input_shape[1] - sep_output_shape[1])
-    #pad_tensor = tf.constant([[0, 0], [pad//2+2, pad - pad//2+3], [0, 0]])
-    #mix = tf.pad(mix, pad_tensor, "CONSTANT")
     if mode != tf.estimator.ModeKeys.PREDICT:
         pad_tensor = tf.constant([[0, 0], [0, 0], [2, 3], [0, 0]])
         sources = tf.pad(sources, pad_tensor, "CONSTANT")
@@ -214,19 +173,25 @@ def unet_separator(features, labels, mode, params):
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {
             'mix': mix,
-            'source_0': separator_sources[0],
-            'source_1': separator_sources[1],
-            'source_2': separator_sources[2],
-            'source_3': separator_sources[3]
+            'sources': separator_sources,
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-    # Supervised objective: MSE in log-normalized magnitude space
-    #separator_sources = tf.transpose(separator_sources, [1, 2, 3, 0])
-    #separator_sources = tf.reshape(separator_sources, [-1, 4])
-    #sources = tf.reshape(sources, [-1, 4])
-
     separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
+
+    if mode != tf.estimator.ModeKeys.PREDICT:
+        global_step = tf.train.get_global_step()
+        sep_lr = tf.get_variable('unsup_sep_lr', [],
+                                 initializer=tf.constant_initializer(model_config["init_sup_sep_lr"],
+                                                                     dtype=tf.float32),
+                                 trainable=False)
+
+        gs_t = tf.reshape(global_step, [1])
+        loss_t = tf.reshape(separator_loss, [1])
+        lr_t = tf.reshape(sep_lr, [1])
+
+        host_call = (host_call_fn, [gs_t, loss_t, lr_t, mix, sources, separator_sources])
+
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
@@ -240,6 +205,7 @@ def unet_separator(features, labels, mode, params):
         return tpu_estimator.TPUEstimatorSpec(
             mode=mode,
             loss=separator_loss,
+            host_call=host_call,
             eval_metrics=(metric_fn, eval_params))
 
 
@@ -247,10 +213,6 @@ def unet_separator(features, labels, mode, params):
     # TODO add learning rate schedule
     # TODO add early stopping
     if mode == tf.estimator.ModeKeys.TRAIN:
-        sep_lr = tf.get_variable('unsup_sep_lr', [],
-                                 initializer=tf.constant_initializer(model_config["init_sup_sep_lr"],
-                                                                     dtype=tf.float32),
-                                 trainable=False)
         separator_vars = Utils.getTrainableVariables("separator")
         print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
         print("Num of variables: " + str(len(tf.global_variables())))
@@ -258,61 +220,6 @@ def unet_separator(features, labels, mode, params):
         separator_solver = tf.train.AdamOptimizer(learning_rate=sep_lr)
         if model_config["use_tpu"]:
             separator_solver = tpu_optimizer.CrossShardOptimizer(separator_solver)
-
-        global_step = tf.train.get_global_step()
-        batches_per_epoch = 10000 / model_config["batch_size"]
-        current_epoch = (tf.cast(global_step, tf.float32) /
-                         batches_per_epoch)
-        learning_rate = sep_lr
-
-        def host_call_fn(gs, loss, lr, ce):
-            """Training host call. Creates scalar summaries for training metrics.
-            This function is executed on the CPU and should not directly reference
-            any Tensors in the rest of the `model_fn`. To pass Tensors from the
-            model to the `metric_fn`, provide as part of the `host_call`. See
-            https://www.tensorflow.org/api_docs/python/tf/contrib/tpu/TPUEstimatorSpec
-            for more information.
-            Arguments should match the list of `Tensor` objects passed as the second
-            element in the tuple passed to `host_call`.
-            Args:
-              gs: `Tensor with shape `[batch]` for the global_step
-              loss: `Tensor` with shape `[batch]` for the training loss.
-              lr: `Tensor` with shape `[batch]` for the learning_rate.
-              ce: `Tensor` with shape `[batch]` for the current_epoch.
-              input: `Tensor` with shape `[batch, mix_samples, 1]`
-              gt_sources: `Tensor` with shape `[batch, output_samples, 4]`
-              est_sources: `Tensor` with shape `[batch, output_samples, 4]`
-            Returns:
-              List of summary ops to run on the CPU host.
-            """
-            gs = gs[0]
-            with summary.create_file_writer(model_config["model_base_dir"]).as_default():
-                with summary.always_record_summaries():
-                    summary.scalar('loss', loss[0], step=gs)
-                    summary.scalar('learning_rate', lr[0], step=gs)
-                    summary.scalar('current_epoch', ce[0], step=gs)
-                    #summary.audio('mix', input, model_config['expected_sr'], max_outputs=8)
-                    #summary.audio('gt_sources_0', gt_sources[:, 0, :, :], model_config['expected_sr'], max_outputs=8)
-                    #summary.audio('gt_sources_1', gt_sources[:, 1, :, :], model_config['expected_sr'], max_outputs=8)
-                    #summary.audio('est_sources_0', est_sources[:, 0, :, :], model_config['expected_sr'], max_outputs=8)
-                    #summary.audio('est_sources_1', est_sources[:, 1, :, :], model_config['expected_sr'], max_outputs=8)
-            return summary.all_summary_ops()
-
-        # To log the loss, current learning rate, and epoch for Tensorboard, the
-        # summary op needs to be run on the host CPU via host_call. host_call
-        # expects [batch_size, ...] Tensors, thus reshape to introduce a batch
-        # dimension. These Tensors are implicitly concatenated to
-        # [params['batch_size']].
-        gs_t = tf.reshape(global_step, [1])
-        loss_t = tf.reshape(separator_loss, [1])
-        lr_t = tf.reshape(learning_rate, [1])
-        ce_t = tf.reshape(current_epoch, [1])
-        #mix = tf.reshape(mix, [1])
-        #s_gt = tf.reshape(sources, [1])
-        #s_est = tf.reshape(separator_sources, [1])
-
-
-        host_call = (host_call_fn, [gs_t, loss_t, lr_t, ce_t])
 
         train_op = separator_solver.minimize(separator_loss,
                                              var_list=separator_vars,
@@ -324,8 +231,10 @@ def unet_separator(features, labels, mode, params):
 
 
 @ex.automain
-def dsd_100_experiment(model_config):
+def dsd_100_experiment(model_config, experiment_id):
+
     print("SCRIPT START")
+
     # Create subfolders if they do not exist to save results
     for dir in [model_config["model_base_dir"], model_config["log_dir"]]:
         if not os.path.exists(dir):
@@ -339,7 +248,7 @@ def dsd_100_experiment(model_config):
         zone='us-central1-f')
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
-        model_dir=model_config['model_base_dir'],
+        model_dir=model_config['model_base_dir'] + os.path.sep + str(experiment_id),
         save_checkpoints_steps=500,
         save_summary_steps=250,
         tpu_config=tpu_config.TPUConfig(
@@ -367,7 +276,8 @@ def dsd_100_experiment(model_config):
 
     # Train the Model.
     if model_config['load_model']:
-        current_step = estimator._load_global_step_from_checkpoint_dir(model_config['model_base_dir'])
+        current_step = estimator._load_global_step_from_checkpoint_dir(
+            model_config['model_base_dir'] + os.path.sep + str(experiment_id))
     else:
         separator.train(
             input_fn=musdb_train.input_fn,
@@ -383,17 +293,10 @@ def dsd_100_experiment(model_config):
             steps=model_config['evaluation_steps'])
     else:
         print("Test results and save predicted sources:")
-        import librosa
         predictions = separator.predict(
             input_fn=musdb_eval.input_fn)
 
-        for i, predicted_sources in enumerate(predictions):
-            for skey in predicted_sources.keys():
-                audio_path = "sample_{i}_source_{skey}.wav".format(i=i, skey=skey)
-                librosa.output.write_wav(audio_path, predicted_sources[skey], model_config['expected_sr'])
-            if i == 10:
-                raise
-
+        # TODO concatenate by output name and sample_idx
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
