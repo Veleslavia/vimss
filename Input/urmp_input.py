@@ -16,7 +16,7 @@ CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav'
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
 CHANNELS = 1            # always work with mono!
-NUM_SOURCES = 4         # fix 4 sources for musdb + mix
+NUM_SOURCES = 13         # fix 13 sources for urmp + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
 
 
@@ -91,7 +91,7 @@ class URMPInput(object):
         #audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
-        mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), 
+        mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SAMPLES, CHANNELS, NUM_SOURCES]))
         return mix, sources
 

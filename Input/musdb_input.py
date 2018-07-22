@@ -14,6 +14,9 @@ import functools
 CHANNEL_NAMES = ['.stem_mix.wav', '.stem_vocals.wav', '.stem_bass.wav', '.stem_drums.wav', '.stem_other.wav']
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
+# this is the proper size for mix input if "context" is set for NUM_SAMPLES = 16384
+# Actually, output will be 16389 but nobody cares
+MIX_WITH_PADDING = 147443
 CHANNELS = 1            # always work with mono!
 NUM_SOURCES = 4         # fix 4 sources for musdb + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
@@ -87,9 +90,11 @@ class MusDBInput(object):
 
         parsed = tf.parse_single_example(value, keys_to_features)
         audio_data = tf.sparse_tensor_to_dense(parsed['audio/encoded'], default_value=0)
-        audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
+        #audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
+        audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
-        mix, sources = tf.reshape(audio_data[0], tf.stack([NUM_SAMPLES, CHANNELS])), tf.reshape(audio_data[1:], tf.stack([NUM_SAMPLES, CHANNELS, NUM_SOURCES]))
+        mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), \
+                       tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
         return mix, sources
 
     def input_fn(self, params):
@@ -123,7 +128,7 @@ class MusDBInput(object):
         # Read the data from disk in parallel
         dataset = dataset.apply(
             tf.contrib.data.parallel_interleave(
-                fetch_dataset, cycle_length=64, sloppy=True))
+                fetch_dataset, cycle_length=16, sloppy=True))
         dataset = dataset.shuffle(1024, reshuffle_each_iteration=True)
 
         # Parse, preprocess, and batch the data in parallel
