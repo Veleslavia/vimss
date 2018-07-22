@@ -60,6 +60,10 @@ def cfg():
     model_config["num_sources"] = 4 if model_config["task"] == "multi_instrument" else 2
     model_config["num_channels"] = 1 if model_config["mono_downmix"] else 2
 
+    gcp_name = "jeju-dl"
+    gcp_zone = "us-central1-f"
+    tpu_name = "leo-tpu"
+
 @ex.named_config
 def baseline():
     print("Training baseline model")
@@ -243,9 +247,9 @@ def dsd_100_experiment(model_config, experiment_id):
     print("TPU resolver started")
 
     tpu_cluster_resolver = TPUClusterResolver(
-        tpu=[os.environ['TPU_NAME']],
-        project='plated-dryad-162216',
-        zone='us-central1-f')
+        tpu=tpu_name,
+        project=gcp_name,
+        zone=gcp_zone)
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'] + os.path.sep + str(experiment_id),

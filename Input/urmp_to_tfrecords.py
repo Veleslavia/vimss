@@ -18,9 +18,12 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     'gcs_output_path', 'gs://urmp-tfrecords-context/urmpv2', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
-    'local_scratch_dir', '/mnt/disk-datasets/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
+    # 'local_scratch_dir', '/mnt/disk/datasets/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
+    'local_scratch_dir', '/home/leo/Desktop/test/scratch', 'Scratch directory path for temporary files.')
+
 flags.DEFINE_string(
-    'raw_data_dir', '/mnt/disk-datasets/urmpv2', 'Directory path for raw URMP dataset. '
+    # 'raw_data_dir', '/mnt/disk/datasets/urmpv2', 'Directory path for raw URMP dataset. '
+    'raw_data_dir', '/home/leo/Desktop/test/URMP-V2', 'Directory path for raw URMP dataset. '
     'Should have train and test subdirectories inside it.')
 
 
@@ -39,7 +42,7 @@ TEST_DIRECTORY = 'test'
 TRAINING_SHARDS = 30
 TEST_SHARDS = 14
 
-CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav', '.stem_fl.wav', '.stem_hn.wav', '.stem_ob.wav', 
+CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav', '.stem_fl.wav', '.stem_hn.wav', '.stem_ob.wav',
                  '.stem_sax.wav', '.stem_tba.wav', '.stem_tbn.wav', '.stem_tpt.wav', '.stem_va.wav', '.stem_vc.wav', '.stem_vn.wav']
 
 MIX_WITH_PADDING = 147443
@@ -117,7 +120,7 @@ def _get_segments_from_audio_cache(file_data_cache):
     offset = (MIX_WITH_PADDING - NUM_SAMPLES)//2
     start_idx = offset
     end_idx = file_data_cache[0][1] - offset - 1
-    for sample_idx in range((end_idx - start_idx)//NUM_SAMPLES):        
+    for sample_idx in range((end_idx - start_idx)//NUM_SAMPLES):
         # sampling segments, ignore first and last incomplete segments
         # notice that we sample MIX_WITH_PADDING from the mix and central cropped NUM_SAMPLES from the sources
         segments_data = list()
@@ -214,13 +217,74 @@ def _process_dataset(filenames,
 def get_wav(database_path):
     """ Iterate through .wav files from URMP dataset
         returns data_list: List[List[path_to_wavefiles]] """
+
+    # silence_path = '/mnt/disks/datasets/silence.wav'
+    silence_path = '/home/leo/Desktop/test/silence.wav'
     track_list = []
-    for dir in os.listdir(database_path):
-        source_list = []
-        for filename in os.listdir(database_path+"/"+dir):
-            source_list.append(os.path.join(database_path+"/"+dir, filename))
-            source_list.sort()
-        track_list.append(source_list)
+    # for dir in os.listdir(database_path):
+    #     source_list = []
+    #     for filename in os.listdir(database_path+"/"+dir):
+    #         source_list.append(os.path.join(database_path+"/"+dir, filename))
+    #         source_list.sort()
+    #     track_list.append(source_list)
+
+    # tracks = [f for r,d,f in os.walk('test')]
+    # waves = [os.path.join(database_path, wav) for sub_folders in tracks for wav in sub_folders]
+
+    source_map = {
+        'mix': 0,
+        'bn': 1,
+        'cl': 2,
+        'db': 3,
+        'fl': 4,
+        'hn': 5,
+        'ob': 6,
+        'sax': 7,
+        'tba': 8,
+        'tbn': 9,
+        'tpt': 10,
+        'va': 11,
+        'vc': 12,
+        'vn': 13,
+    }
+
+    # Iterate through each tracks
+    for folder in os.listdir(database_path):
+        track_sources = [0 for i in range(14)]  # 1st index must be mix source + 13 individual sources
+
+        # Create Sample object for each instrument source files present
+        for filename in os.listdir(os.path.join(database_path, folder)):
+            if filename.endswith(".wav"):
+                if filename.startswith("AuMix"):
+                    # Place mix source to the first index
+                    mix_path = os.path.join(database_path, folder, filename)
+                    # mix_audio, mix_rate = soundfile.read(mix_path, always_2d=True)
+                    # mix_duration = mix_audio.shape[0] / mix_rate
+                    # mix = Sample(mix_path, mix_rate, mix_audio.shape[1], mix_duration)
+                    track_sources.insert(0, mix_path)
+                else:
+                    # Place Sample object mapping to its instrument index
+                    source_name = filename.split('_')[2]
+                    source_idx = source_map[source_name]
+                    source_path = os.path.join(database_path, folder, filename)
+                    # source_audio, source_rate = soundfile.read(source_path, always_2d=True)
+                    # source_duration = source_audio.shape[0] / source_rate
+                    # source = Sample(source_path, source_rate, source_audio.shape[1], source_duration)
+                    track_sources.insert(source_idx, source_path)
+
+        # Create and insert silence Sample object for instruments not present in the track
+        # silence_audio, silence_rate = soundfile.read(silence_path, always_2d=True)
+        # silence_duration = silence_audio.shape[0] / silence_rate
+        # silence = Sample(silence_path, silence_rate, silence_audio.shape[1], silence_duration)
+
+        for i, track in enumerate(track_sources):
+            if track == 0:
+                track_sources[i] = silence_path
+
+        track_list.append(track_sources)
+        flat_track_list = [wav for tracks in track_list for wav in tracks]
+
+
     return track_list
 
 def convert_to_tf_records(raw_data_dir):
