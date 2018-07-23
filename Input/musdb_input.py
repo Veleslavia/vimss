@@ -73,7 +73,7 @@ class MusDBInput(object):
     def dataset_parser(self, value):
         """Parse an audio example record from a serialized string Tensor."""
         keys_to_features = {
-            'audio/filename':
+            'audio/file_basename':
                 tf.FixedLenFeature([], tf.string, ''),
             'audio/encoded':
                 tf.VarLenFeature(tf.float32),
@@ -96,7 +96,7 @@ class MusDBInput(object):
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), \
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
-        features = {'mix': mix, 'filename': parsed['audio/filename'], 'sample_id': parsed['audio/sample_idx']}
+        features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):
