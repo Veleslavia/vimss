@@ -18,12 +18,9 @@ flags.DEFINE_string(
 flags.DEFINE_string(
     'gcs_output_path', 'gs://urmp-tfrecords-context/urmpv2', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
-    # 'local_scratch_dir', '/mnt/disk/datasets/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
-    'local_scratch_dir', '/home/leo/Desktop/test/scratch', 'Scratch directory path for temporary files.')
-
+    'local_scratch_dir', '/mnt/disk/datasets/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
 flags.DEFINE_string(
-    # 'raw_data_dir', '/mnt/disk/datasets/urmpv2', 'Directory path for raw URMP dataset. '
-    'raw_data_dir', '/home/leo/Desktop/test/URMP-V2', 'Directory path for raw URMP dataset. '
+    'raw_data_dir', '/mnt/disk/datasets/urmpv2', 'Directory path for raw URMP dataset. '
     'Should have train and test subdirectories inside it.')
 
 
@@ -39,8 +36,8 @@ FLAGS = flags.FLAGS
 TRAINING_DIRECTORY = 'train'
 TEST_DIRECTORY = 'test'
 
-TRAINING_SHARDS = 30
-TEST_SHARDS = 14
+TRAINING_SHARDS = 6
+TEST_SHARDS = 3
 
 CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav', '.stem_fl.wav', '.stem_hn.wav', '.stem_ob.wav',
                  '.stem_sax.wav', '.stem_tba.wav', '.stem_tbn.wav', '.stem_tpt.wav', '.stem_va.wav', '.stem_vc.wav', '.stem_vn.wav']
@@ -154,7 +151,6 @@ def _process_audio_files_batch(chunk_data):
         # load all wave files into memory and create a buffer
         file_data_cache = list()
         for source in track:
-            print(source)
             data, sr = librosa.core.load(source, sr=SAMPLE_RATE, mono=True)
             file_data_cache.append([track, len(data), data])
 
@@ -198,7 +194,7 @@ def _process_dataset(filenames,
     files: list of tf-record filepaths created from processing the dataset.
     """
     _check_or_create_dir(output_directory)
-    chunksize = int(math.ceil(len(filenames) / num_shards))
+    chunksize = int(math.ceil(len(filenames) / float(num_shards)))
 
     pool = Pool(multiprocessing.cpu_count()-1)
 
@@ -218,8 +214,7 @@ def get_wav(database_path):
     """ Iterate through .wav files from URMP dataset
         returns data_list: List[List[path_to_wavefiles]] """
 
-    # silence_path = '/mnt/disks/datasets/silence.wav'
-    silence_path = '/home/leo/Desktop/test/silence.wav'
+    silence_path = '/mnt/disks/datasets/silence.wav'
     track_list = []
     # for dir in os.listdir(database_path):
     #     source_list = []
@@ -261,7 +256,7 @@ def get_wav(database_path):
                     # mix_audio, mix_rate = soundfile.read(mix_path, always_2d=True)
                     # mix_duration = mix_audio.shape[0] / mix_rate
                     # mix = Sample(mix_path, mix_rate, mix_audio.shape[1], mix_duration)
-                    track_sources.insert(0, mix_path)
+                    track_sources[0] = mix_path
                 else:
                     # Place Sample object mapping to its instrument index
                     source_name = filename.split('_')[2]
@@ -270,19 +265,17 @@ def get_wav(database_path):
                     # source_audio, source_rate = soundfile.read(source_path, always_2d=True)
                     # source_duration = source_audio.shape[0] / source_rate
                     # source = Sample(source_path, source_rate, source_audio.shape[1], source_duration)
-                    track_sources.insert(source_idx, source_path)
+                    track_sources[source_idx] = source_path
 
         # Create and insert silence Sample object for instruments not present in the track
         # silence_audio, silence_rate = soundfile.read(silence_path, always_2d=True)
         # silence_duration = silence_audio.shape[0] / silence_rate
         # silence = Sample(silence_path, silence_rate, silence_audio.shape[1], silence_duration)
-
         for i, track in enumerate(track_sources):
             if track == 0:
                 track_sources[i] = silence_path
 
         track_list.append(track_sources)
-        flat_track_list = [wav for tracks in track_list for wav in tracks]
 
 
     return track_list
@@ -336,7 +329,7 @@ def upload_to_gcs(training_records, test_records):
 
     def _upload_files(filenames):
         """Upload a list of files into a specifc subdirectory."""
-        for i, filename in enumerate(sorted(filenames)):
+        for i, filename in enumerate(filenames):
             blob = bucket.blob(key_prefix + os.path.basename(filename))
             blob.upload_from_filename(filename)
             if not i % 5:
@@ -372,7 +365,7 @@ def main(argv):  # pylint: disable=unused-argument
     training_records, test_records = convert_to_tf_records(raw_data_dir)
 
     # Upload to GCS
-    upload_to_gcs(training_records, test_records)
+    # upload_to_gcs(training_records, test_records)
 
 
 if __name__ == '__main__':

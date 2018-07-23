@@ -126,7 +126,7 @@ class URMPInput(object):
         # Read the data from disk in parallel
         dataset = dataset.apply(
             tf.contrib.data.parallel_interleave(
-                fetch_dataset, cycle_length=16, sloppy=True))
+                fetch_dataset, cycle_length=6, sloppy=True))
         dataset = dataset.shuffle(1024, reshuffle_each_iteration=True)
 
         # Parse, preprocess, and batch the data in parallel
