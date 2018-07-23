@@ -15,6 +15,8 @@ from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.python.estimator import estimator
 
+import librosa
+
 ex = Experiment('Waveunet')
 
 @ex.config
@@ -107,7 +109,7 @@ def baseline_comparison():
     }
 
 @ex.capture
-def unet_separator(features, labels, mode, params, experiment_id):
+def unet_separator(features, labels, filename, sample_id, mode, params, experiment_id):
 
     # Define host call function
     def host_call_fn(gs, loss, lr, mix, gt_sources, est_sources):
@@ -178,6 +180,8 @@ def unet_separator(features, labels, mode, params, experiment_id):
         predictions = {
             'mix': mix,
             'sources': separator_sources,
+            'filename': filename,
+            'sample_id': sample_id
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
@@ -240,7 +244,7 @@ def dsd_100_experiment(model_config, experiment_id):
     print("SCRIPT START")
 
     # Create subfolders if they do not exist to save results
-    for dir in [model_config["model_base_dir"], model_config["log_dir"]]:
+    for dir in [model_config["model_base_dir"], model_config["log_dir"], model_config["estimates_path"]]:
         if not os.path.exists(dir):
             os.makedirs(dir)
 
@@ -300,7 +304,24 @@ def dsd_100_experiment(model_config, experiment_id):
         predictions = separator.predict(
             input_fn=urmp_eval.input_fn)
 
-        # TODO concatenate by output name and sample_idx
+        for prediction in predictions:
+            estimates_dir = model_config["estimates_path"] + os.path.sep + prediction['filename']
+            if not os.path.exists(estimates_dir):
+                os.makedirs(estimates_dir)
+                os.makedirs(estimates_dir + os.path.sep + 'mix')
+                for source_name in range(len(prediction['sources'])):
+                    os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
+            mix_audio_path = estimates_dir + os.path.sep + 'mix' + os.path.sep + prediction['sample_id'] + '.wav'
+            librosa.output.write_wav(mix_audio_path, prediction['mix'])
+            for source_name in range(len(prediction['sources'])):
+                source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
+                    basedir=estimates_dir,
+                    sep=os.path.sep,
+                    sname=source_name,
+                    sampleid=prediction['sample_id']
+                )
+                librosa.output.write_wav(source_path, prediction['sources'][source_name])
+        Utils.concat_sources(model_config["estimates_path"])
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
