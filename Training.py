@@ -25,7 +25,7 @@ def cfg():
     model_config = {"musdb_path": "gs://vimsstfrecords/musdb18context", # SET MUSDB PATH HERE
                     "estimates_path": "estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-                    "model_base_dir": "gs://vimsscheckpoints/", # Base folder for model checkpoints
+                    "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 64, # Batch size
                     "init_sup_sep_lr": 1e-5, # Supervised separator learning rate
@@ -105,7 +105,7 @@ def baseline_comparison():
     }
 
 @ex.capture
-def unet_separator(features, labels, filename, sample_id, mode, params, experiment_id):
+def unet_separator(features, labels, mode, params):
 
     # Define host call function
     def host_call_fn(gs, loss, lr, mix, gt_sources, est_sources):
@@ -141,7 +141,9 @@ def unet_separator(features, labels, filename, sample_id, mode, params, experime
                                       model_config['expected_sr'], max_outputs=4)
             return summary.all_summary_ops()
 
-    mix = features
+    mix = features['mix']
+    filename = features['filename']
+    sample_id = features['sample_id']
     sources = labels
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
@@ -308,7 +310,9 @@ def dsd_100_experiment(model_config, experiment_id):
                 for source_name in range(len(prediction['sources'])):
                     os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
             mix_audio_path = estimates_dir + os.path.sep + 'mix' + os.path.sep + prediction['sample_id'] + '.wav'
-            librosa.output.write_wav(mix_audio_path, prediction['mix'])
+            librosa.output.write_wav(mix_audio_path,
+                                     prediction['mix'],
+                                     sr=model_config["expected_sr"])
             for source_name in range(len(prediction['sources'])):
                 source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
                     basedir=estimates_dir,
@@ -316,7 +320,9 @@ def dsd_100_experiment(model_config, experiment_id):
                     sname=source_name,
                     sampleid=prediction['sample_id']
                 )
-                librosa.output.write_wav(source_path, prediction['sources'][source_name])
+                librosa.output.write_wav(source_path,
+                                         prediction['sources'][source_name],
+                                         sr=model_config["expected_sr"])
         Utils.concat_sources(model_config["estimates_path"])
 
 if __name__ == '__main__':
