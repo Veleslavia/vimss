@@ -309,7 +309,11 @@ def dsd_100_experiment(model_config, experiment_id):
                 os.makedirs(estimates_dir + os.path.sep + 'mix')
                 for source_name in range(len(prediction['sources'])):
                     os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
-            mix_audio_path = estimates_dir + os.path.sep + 'mix' + os.path.sep + str(prediction['sample_id']) + '.wav'
+            mix_audio_path = "{basedir}{sep}mix{sep}{sampleid}.wav".format(
+                basedir=estimates_dir,
+                sep=os.path.sep,
+                sampleid="%.4d" % prediction['sample_id']
+            )
             librosa.output.write_wav(mix_audio_path,
                                      prediction['mix'],
                                      sr=model_config["expected_sr"])
@@ -318,12 +322,13 @@ def dsd_100_experiment(model_config, experiment_id):
                     basedir=estimates_dir,
                     sep=os.path.sep,
                     sname=source_name,
-                    sampleid=str(prediction['sample_id'])
+                    sampleid="%.4d" % prediction['sample_id']
                 )
                 librosa.output.write_wav(source_path,
                                          prediction['sources'][source_name],
                                          sr=model_config["expected_sr"])
-        Utils.concat_sources(model_config["estimates_path"])
+        Utils.concat_and_upload(model_config["estimates_path"],
+                                model_config['model_base_dir'] + os.path.sep + str(experiment_id))
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)

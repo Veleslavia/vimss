@@ -1,3 +1,4 @@
+import os
 import tensorflow as tf
 import numpy as np
 import librosa
@@ -196,5 +197,12 @@ def crop(tensor, target_shape, match_feature_dim=True):
     return tensor[:,crop_start[1]:-crop_end[1],:]
 
 
-def concat_sources(estimates_path):
-    pass
+def concat_and_upload(estimates_path, model_base_path, sr=22050):
+
+    for root, dirs, files in os.walk(estimates_path):
+        audio_data = np.concatenate([librosa.core.load(os.path.join(root, name))[0] for name in files])
+        librosa.output.write_wav(root+'.wav', audio_data, sr)
+        for name in files:
+            os.remove(os.path.join(root, name))
+        os.rmdir(root)
+    # TODO add upload
