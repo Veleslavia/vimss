@@ -56,7 +56,7 @@ class MusDBInput(object):
             self.data_dir = None
         self.transpose_input = transpose_input
 
-    def set_shapes(self, batch_size, mix, sources):
+    def set_shapes(self, batch_size, mix, sources, filename, sample_id):
         """Statically set the batch_size dimension."""
         #if self.transpose_input:
         #    images.set_shape(images.get_shape().merge_with(
@@ -68,13 +68,18 @@ class MusDBInput(object):
             tf.TensorShape([batch_size, None, None])))
         sources.set_shape(sources.get_shape().merge_with(
             tf.TensorShape([batch_size, None, None, None])))
+        filename.set_shape(filename.get_shape().merge_with(
+            tf.TensorShape([batch_size, None])))
+        sample_id.set_shape(sample_id.get_shape().merge_with(
+            tf.TensorShape([batch_size, None])))
 
-        return mix, sources
+        return mix, sources, filename, sample_id
 
     def dataset_parser(self, value):
         """Parse an audio example record from a serialized string Tensor."""
         keys_to_features = {
-            # TODO read filenames
+            'audio/filename':
+                tf.FixedLenFeature([], tf.string, ''),
             'audio/encoded':
                 tf.VarLenFeature(tf.float32),
             'audio/sample_rate':
@@ -95,8 +100,7 @@ class MusDBInput(object):
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), \
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
-        # TODO return filenames and sample_idx for concatenating output
-        return mix, sources
+        return mix, sources, parsed['audio/filename'], parsed['audio/sample_idx']
 
     def input_fn(self, params):
         """Input function which provides a single batch for train or eval.

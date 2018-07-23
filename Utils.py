@@ -194,3 +194,7 @@ def crop(tensor, target_shape, match_feature_dim=True):
     crop_end = diff - crop_start
 
     return tensor[:,crop_start[1]:-crop_end[1],:]
+
+
+def concat_sources(estimates_path):
+    pass
