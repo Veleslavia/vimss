@@ -15,6 +15,7 @@ CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav'
                  '.stem_sax.wav', '.stem_tba.wav', '.stem_tbn.wav', '.stem_tbt.wav', '.stem_va.wav', '.stem_vc.wav', '.stem_vn.wav']
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
+MIX_WITH_PADDING = 147443
 CHANNELS = 1            # always work with mono!
 NUM_SOURCES = 13         # fix 13 sources for urmp + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
@@ -56,22 +57,23 @@ class URMPInput(object):
 
     def set_shapes(self, batch_size, mix, sources):
         """Statically set the batch_size dimension."""
-        #if self.transpose_input:
-        #    images.set_shape(images.get_shape().merge_with(
-        #        tf.TensorShape([None, None, None, batch_size])))
-        #    labels.set_shape(labels.get_shape().merge_with(
-        #        tf.TensorShape([batch_size])))
-        #else:
-        mix.set_shape(mix.get_shape().merge_with(
+
+        features['mix'].set_shape(features['mix'].get_shape().merge_with(
             tf.TensorShape([batch_size, None, None])))
         sources.set_shape(sources.get_shape().merge_with(
             tf.TensorShape([batch_size, None, None, None])))
+        features['filename'].set_shape(features['filename'].get_shape().merge_with(
+            tf.TensorShape([batch_size])))
+        features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
+            tf.TensorShape([batch_size])))
 
-        return mix, sources
+        return features, sources
 
     def dataset_parser(self, value):
         """Parse an audio example record from a serialized string Tensor."""
         keys_to_features = {
+            'audio/filename':
+                tf.FixedLenFeature([], tf.string, ''),
             'audio/encoded':
                 tf.VarLenFeature(tf.float32),
             'audio/sample_rate':
@@ -93,7 +95,8 @@ class URMPInput(object):
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SAMPLES, CHANNELS, NUM_SOURCES]))
-        return mix, sources
+        features = {'mix': mix, 'filename': parsed['audio/filename'], 'sample_id': parsed['audio/sample_idx']}
+        return features, sources
 
     def input_fn(self, params):
         """Input function which provides a single batch for train or eval.
