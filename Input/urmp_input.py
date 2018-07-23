@@ -55,17 +55,20 @@ class URMPInput(object):
             self.data_dir = None
         self.transpose_input = transpose_input
 
-    def set_shapes(self, batch_size, mix, sources):
+    def set_shapes(self, batch_size, features, sources):
         """Statically set the batch_size dimension."""
 
         features['mix'].set_shape(features['mix'].get_shape().merge_with(
             tf.TensorShape([batch_size, None, None])))
         sources.set_shape(sources.get_shape().merge_with(
             tf.TensorShape([batch_size, None, None, None])))
-        features['filename'].set_shape(features['filename'].get_shape().merge_with(
-            tf.TensorShape([batch_size])))
+        #features['filename'].set_shape(features['filename'].get_shape().merge_with(
+        #    tf.TensorShape([batch_size])))
         features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
             tf.TensorShape([batch_size])))
+    
+        print(features)
+        print(sources)
 
         return features, sources
 
@@ -93,9 +96,9 @@ class URMPInput(object):
         #audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
-        mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),
-                       tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SAMPLES, CHANNELS, NUM_SOURCES]))
-        features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+        mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
+        #features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+        features = {'mix': mix, 'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):
@@ -151,4 +154,6 @@ class URMPInput(object):
 
         # Prefetch overlaps in-feed with training
         dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
+        print(type(dataset))
+        print(dataset)
         return dataset

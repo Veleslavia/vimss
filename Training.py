@@ -22,7 +22,8 @@ ex = Experiment('Waveunet')
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"urmp_path": "gs://vimsstfrecords/urmpv2", # SET URMP PATH HERE
+    model_config = {#"urmp_path": "gs://vimsstfrecords/urmpv2", # SET URMP PATH HERE
+                    "urmp_path": "gs://urmp-tfrecords-context",
                     "estimates_path": "gs://urmpv2-estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "model_base_dir": "gs://checkpoints/urmpv2-tpu-checkpoints", # Base folder for model checkpoints
@@ -54,17 +55,13 @@ def cfg():
                     'upsampling' : 'linear', # Type of technique used for upsampling the feature maps in a unet architecture, either 'linear' interpolation or 'learned' filling in of extra samples
                     'task' : 'voice', # Type of separation task. 'voice' : Separate music into voice and accompaniment. 'multi_instrument': Separate music into guitar, bass, vocals, drums and other (Sisec)
                     'augmentation' : True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
-                    'raw_audio_loss' : True # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
+                    'raw_audio_loss' : True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
+                    'experiment_id' : np.random.randint(0,1000000)
                     }
-    seed=1337
-    experiment_id = np.random.randint(0,1000000)
 
-    model_config["num_sources"] = 4 if model_config["task"] == "multi_instrument" else 2
+    model_config["num_sources"] = 13 if model_config["task"] == "multi_instrument" else 2
     model_config["num_channels"] = 1 if model_config["mono_downmix"] else 2
 
-    gcp_name = "jeju-dl"
-    gcp_zone = "us-central1-f"
-    tpu_name = "leo-tpu"
 
 @ex.named_config
 def baseline():
@@ -110,6 +107,7 @@ def baseline_comparison():
 
 @ex.capture
 def unet_separator(features, labels, mode, params):
+    print('unet separator')
 
     # Define host call function
     def host_call_fn(gs, loss, lr, mix, gt_sources, est_sources):
@@ -132,7 +130,7 @@ def unet_separator(features, labels, mode, params):
               List of summary ops to run on the CPU host.
             """
             gs = gs[0]
-            with summary.create_file_writer(model_config["model_base_dir"]+os.path.sep+str(experiment_id)).as_default():
+            with summary.create_file_writer(model_config["model_base_dir"]+os.path.sep+str(model_config["experiment_id"])).as_default():
                 with summary.always_record_summaries():
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
@@ -146,7 +144,7 @@ def unet_separator(features, labels, mode, params):
             return summary.all_summary_ops()
 
     mix = features['mix']
-    filename = features['filename']
+    #filename = features['filename']
     sample_id = features['sample_id']
     sources = labels
     model_config = params
@@ -223,6 +221,7 @@ def unet_separator(features, labels, mode, params):
     # TODO add learning rate schedule
     # TODO add early stopping
     if mode == tf.estimator.ModeKeys.TRAIN:
+        print('===============================')
         separator_vars = Utils.getTrainableVariables("separator")
         print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
         print("Num of variables: " + str(len(tf.global_variables())))
@@ -241,7 +240,11 @@ def unet_separator(features, labels, mode, params):
 
 
 @ex.automain
-def dsd_100_experiment(model_config, experiment_id):
+def dsd_100_experiment(model_config):
+
+    tpu_name = "leo-tpu"
+    gcp_name = "jeju-dl"
+    gcp_zone = "us-central1-f"    
 
     print("SCRIPT START")
 
@@ -258,7 +261,7 @@ def dsd_100_experiment(model_config, experiment_id):
         zone=gcp_zone)
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
-        model_dir=model_config['model_base_dir'] + os.path.sep + str(experiment_id),
+        model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
         save_checkpoints_steps=500,
         save_summary_steps=250,
         tpu_config=tpu_config.TPUConfig(
@@ -273,6 +276,7 @@ def dsd_100_experiment(model_config, experiment_id):
         transpose_input=False,
         use_bfloat16=False) for is_training in [True, False]]
 
+    print("Assigning TPUEstimator")
     # Optimize in a +supervised fashion until validation loss worsens
     separator = tpu_estimator.TPUEstimator(
         use_tpu=model_config["use_tpu"],
@@ -284,11 +288,13 @@ def dsd_100_experiment(model_config, experiment_id):
         params={i: model_config[i] for i in model_config if i != 'batch_size'}
     )
 
+    print("Train the model")
     # Train the Model.
     if model_config['load_model']:
         current_step = estimator._load_global_step_from_checkpoint_dir(
-            model_config['model_base_dir'] + os.path.sep + str(experiment_id))
+            model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
     else:
+        print("separator.train")
         separator.train(
             input_fn=urmp_train.input_fn,
             steps=model_config['training_steps']) # Should be an early stopping here, but it will come with tf 1.10
