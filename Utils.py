@@ -200,9 +200,12 @@ def crop(tensor, target_shape, match_feature_dim=True):
 def concat_and_upload(estimates_path, model_base_path, sr=22050):
 
     for root, dirs, files in os.walk(estimates_path):
+        if not files:
+            continue
+        files.sort()
         audio_data = np.concatenate([librosa.core.load(os.path.join(root, name))[0] for name in files])
         librosa.output.write_wav(root+'.wav', audio_data, sr)
         for name in files:
             os.remove(os.path.join(root, name))
         os.rmdir(root)
-    # TODO add upload
+        # TODO add upload
