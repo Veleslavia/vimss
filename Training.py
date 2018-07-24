@@ -213,7 +213,7 @@ def unet_separator(features, labels, mode, params):
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
+    separator_loss = tf.reduce_sum(tf.squared_difference(sources, separator_sources))
 
     if mode != tf.estimator.ModeKeys.PREDICT:
         global_step = tf.train.get_global_step()
