@@ -134,13 +134,14 @@ def unet_separator(features, labels, mode, params):
                 with summary.always_record_summaries():
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
-                with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
-                    summary.audio('mix', mix, model_config['expected_sr'], max_outputs=model_config["num_sources"])
-                    for source_id in range(gt_sources.shape[1].value):
-                        summary.audio('gt_sources_{source_id}'.format(source_id=source_id), gt_sources[:, source_id, :, :],
-                                      model_config['expected_sr'], max_outputs=model_config["num_sources"])
-                        summary.audio('est_sources_{source_id}'.format(source_id=source_id), est_sources[:, source_id, :, :],
-                                      model_config['expected_sr'], max_outputs=model_config["num_sources"])
+                if gs % 1000 == 0:
+                    with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
+                        summary.audio('mix', mix, model_config['expected_sr'], max_outputs=model_config["num_sources"])
+                        for source_id in range(gt_sources.shape[1].value):
+                            summary.audio('gt_sources_{source_id}'.format(source_id=source_id), gt_sources[:, source_id, :, :],
+                                          model_config['expected_sr'], max_outputs=model_config["num_sources"])
+                            summary.audio('est_sources_{source_id}'.format(source_id=source_id), est_sources[:, source_id, :, :],
+                                          model_config['expected_sr'], max_outputs=model_config["num_sources"])
             return summary.all_summary_ops()
 
     mix = features['mix']
@@ -241,7 +242,7 @@ def unet_separator(features, labels, mode, params):
 @ex.automain
 def dsd_100_experiment(model_config):
 
-    tpu_name = "leo-tpu"
+    tpu_name = "leo4-tpu"
     gcp_name = "jeju-dl"
     gcp_zone = "us-central1-f"
 
