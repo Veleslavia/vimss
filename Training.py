@@ -35,6 +35,7 @@ def cfg():
                     "use_tpu": True,
                     "load_model": False,
                     "predict_only": False,
+                    "write_audio_summaries": False,
                     "audio_summaries_every_n_steps": 10000,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
@@ -54,10 +55,9 @@ def cfg():
                     'upsampling' : 'linear', # Type of technique used for upsampling the feature maps in a unet architecture, either 'linear' interpolation or 'learned' filling in of extra samples
                     'task' : 'voice', # Type of separation task. 'voice' : Separate music into voice and accompaniment. 'multi_instrument': Separate music into guitar, bass, vocals, drums and other (Sisec)
                     'augmentation' : True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
-                    'raw_audio_loss' : True # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
+                    'raw_audio_loss' : True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
+                    'experiment_id': np.random.randint(0, 1000000)
                     }
-    seed=1337
-    experiment_id = np.random.randint(0,1000000)
 
     model_config["num_sources"] = 4 if model_config["task"] == "multi_instrument" else 2
     model_config["num_channels"] = 1 if model_config["mono_downmix"] else 2
@@ -108,7 +108,10 @@ def baseline_comparison():
 def unet_separator(features, labels, mode, params):
 
     # Define host call function
-    def host_call_fn(gs, loss, lr, mix, gt_sources, est_sources):
+    def host_call_fn(gs, loss, lr, 
+            mix=tf.placeholder(tf.float32), 
+            gt_sources=tf.placeholder(tf.float32), 
+            est_sources=tf.placeholder(tf.float32)):
             """Training host call. Creates scalar summaries for training metrics.
             This function is executed on the CPU and should not directly reference
             any Tensors in the rest of the `model_fn`. To pass Tensors from the
@@ -128,22 +131,21 @@ def unet_separator(features, labels, mode, params):
               List of summary ops to run on the CPU host.
             """
             gs = gs[0]
-            with summary.create_file_writer(model_config["model_base_dir"]+os.path.sep+str(experiment_id)).as_default():
+            with summary.create_file_writer(model_config["model_base_dir"]+os.path.sep+str(model_config["experiment_id"])).as_default():
                 with summary.always_record_summaries():
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
-                with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
-                    summary.audio('mix', mix, model_config['expected_sr'], max_outputs=4)
-                    for source_id in range(gt_sources.shape[1].value):
-                        summary.audio('gt_sources_{source_id}'.format(source_id=source_id), gt_sources[:, source_id, :, :],
-                                      model_config['expected_sr'], max_outputs=4)
-                        summary.audio('est_sources_{source_id}'.format(source_id=source_id), est_sources[:, source_id, :, :],
-                                      model_config['expected_sr'], max_outputs=4)
+                if model_config["write_audio_summaries"]:
+                    with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
+                        summary.audio('mix', mix, model_config['expected_sr'], max_outputs=4)
+                        for source_id in range(gt_sources.shape[1].value):
+                            summary.audio('gt_sources_{source_id}'.format(source_id=source_id), gt_sources[:, source_id, :, :],
+                                          model_config['expected_sr'], max_outputs=4)
+                            summary.audio('est_sources_{source_id}'.format(source_id=source_id), est_sources[:, source_id, :, :],
+                                          model_config['expected_sr'], max_outputs=4)
             return summary.all_summary_ops()
 
     mix = features['mix']
-    filename = features['filename']
-    sample_id = features['sample_id']
     sources = labels
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
@@ -178,8 +180,8 @@ def unet_separator(features, labels, mode, params):
         predictions = {
             'mix': mix,
             'sources': separator_sources,
-            'filename': filename,
-            'sample_id': sample_id
+            'filename': features['filename'],
+            'sample_id': features['sample_id']
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
@@ -196,8 +198,10 @@ def unet_separator(features, labels, mode, params):
         loss_t = tf.reshape(separator_loss, [1])
         lr_t = tf.reshape(sep_lr, [1])
 
-        host_call = (host_call_fn, [gs_t, loss_t, lr_t, mix, sources, separator_sources])
-
+        if model_config["write_audio_summaries"]:
+            host_call = (host_call_fn, [gs_t, loss_t, lr_t, mix, sources, separator_sources])
+        else:
+            host_call = (host_call_fn, [gs_t, loss_t, lr_t])
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
@@ -237,7 +241,7 @@ def unet_separator(features, labels, mode, params):
 
 
 @ex.automain
-def dsd_100_experiment(model_config, experiment_id):
+def dsd_100_experiment(model_config):
 
     print("SCRIPT START")
 
@@ -254,7 +258,7 @@ def dsd_100_experiment(model_config, experiment_id):
         zone='us-central1-f')
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
-        model_dir=model_config['model_base_dir'] + os.path.sep + str(experiment_id),
+        model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
         save_checkpoints_steps=500,
         save_summary_steps=250,
         tpu_config=tpu_config.TPUConfig(
@@ -283,7 +287,7 @@ def dsd_100_experiment(model_config, experiment_id):
     # Train the Model.
     if model_config['load_model']:
         current_step = estimator._load_global_step_from_checkpoint_dir(
-            model_config['model_base_dir'] + os.path.sep + str(experiment_id))
+            model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
     else:
         separator.train(
             input_fn=musdb_train.input_fn,
@@ -328,7 +332,7 @@ def dsd_100_experiment(model_config, experiment_id):
                                          prediction['sources'][source_name],
                                          sr=model_config["expected_sr"])
         Utils.concat_and_upload(model_config["estimates_path"],
-                                model_config['model_base_dir'] + os.path.sep + str(experiment_id))
+                                model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
