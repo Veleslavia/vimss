@@ -3,7 +3,6 @@ import numpy as np
 import os
 
 from Input import Input as Input
-import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
 import Evaluate
 import Utils
@@ -13,8 +12,7 @@ from tensorflow.contrib.signal.python.ops import window_ops
 def test(model_config, audio_list, model_folder, load_model):
     # Determine input and output shapes
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]  # Shape of discriminator input
-    if model_config["network"] == "unet":
-        separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(model_config["num_layers"], model_config["num_initial_filters"],
+    separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(model_config["num_layers"], model_config["num_initial_filters"],
                                                                    output_type=model_config["output_type"],
                                                                    context=model_config["context"],
                                                                    mono=model_config["mono_downmix"],
@@ -22,12 +20,6 @@ def test(model_config, audio_list, model_folder, load_model):
                                                                    num_sources=model_config["num_sources"],
                                                                    filter_size=model_config["filter_size"],
                                                                    merge_filter_size=model_config["merge_filter_size"])
-    elif model_config["network"] == "unet_spectrogram":
-        separator_class = Models.UnetSpectrogramSeparator.UnetSpectrogramSeparator(model_config["num_layers"], model_config["num_initial_filters"],
-                                                                       mono=model_config["mono_downmix"],
-                                                                       num_sources=model_config["num_sources"])
-    else:
-        raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output

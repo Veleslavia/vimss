@@ -5,7 +5,6 @@ import os
 
 from Input import musdb_input
 import Utils
-import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
 
 from tensorflow.contrib.cluster_resolver import TPUClusterResolver
@@ -18,12 +17,12 @@ from tensorflow.python.estimator import estimator
 
 import librosa
 
-ex = Experiment('Waveunet')
+ex = Experiment('Conditioned-Waveunet')
 
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"musdb_path": "gs://vimsstfrecords/musdb18context", # SET MUSDB PATH HERE
+    model_config = {"data_path": "gs://vimsstfrecords/", # SET INPUT DATA PATH HERE
                     "estimates_path": "estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
                     # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
@@ -254,8 +253,8 @@ def dsd_100_experiment(model_config):
 
     tpu_cluster_resolver = TPUClusterResolver(
         tpu=[os.environ['TPU_NAME']],
-        project='plated-dryad-162216',
-        zone='us-central1-f')
+        project=[os.environ['PROJECT_NAME']],
+        zone=[os.environ['PROJECT_ZONE']])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),

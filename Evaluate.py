@@ -12,7 +12,6 @@ import glob
 
 from Input import Input
 import Models.UnetAudioSeparator
-import Models.UnetSpectrogramSeparator
 
 import musdb
 import museval
@@ -56,12 +55,6 @@ def predict(track):
                                                                    num_sources=model_config["num_sources"],
                                                                    filter_size=model_config["filter_size"],
                                                                    merge_filter_size=model_config["merge_filter_size"])
-    elif model_config["network"] == "unet_spectrogram":
-        separator_class = Models.UnetSpectrogramSeparator.UnetSpectrogramSeparator(model_config["num_layers"], model_config["num_initial_filters"],
-                                                                       mono=model_config["mono_downmix"],
-                                                                       num_sources=model_config["num_sources"])
-    else:
-        raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
@@ -179,21 +172,6 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
 
     return source_preds
 
-def produce_source_estimates(model_config, load_model, musdb_path, output_path, subsets=None):
-    '''
-    Predicts source estimates for MUSDB for a given model checkpoint and configuration, and evaluate them.
-    :param model_config: Model configuration of the model to be evaluated
-    :param load_model: Model checkpoint path
-    :return: 
-    '''
-    prediction_parameters = [model_config, load_model]
-    with open("prediction_params.pkl", "wb") as file:
-        pickle.dump(prediction_parameters, file)
-
-    mus = musdb.DB(root_dir=musdb_path)
-    #if mus.test(predict):
-    #    print "Function is valid"
-    mus.run(predict, estimates_dir=output_path, subsets=subsets)
 
 def compute_mean_metrics(json_folder, compute_averages=True):
     files = glob.glob(os.path.join(json_folder, "*.json"))
