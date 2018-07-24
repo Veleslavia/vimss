@@ -96,6 +96,8 @@ class MusDBInput(object):
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), \
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
+        mix = tf.cast(mix, tf.bfloat16)
+        sources = tf.cast(sources, tf.bfloat16)
         if self.is_training:
             features = {'mix': mix}
         else:
