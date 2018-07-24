@@ -31,6 +31,7 @@ def cfg():
                     "training_steps": 2000*100, # Number of training steps per training
                     "evaluation_steps": 1000,
                     "use_tpu": True,
+                    "use_bfloat16": True,
                     "load_model": False,
                     "predict_only": False,
                     "write_audio_summaries": False,
@@ -300,7 +301,11 @@ def dsd_100_experiment(model_config):
     print("TPU resolver started")
 
     tpu_cluster_resolver = TPUClusterResolver(
+<<<<<<< HEAD
         tpu=os.environ['TPU_NAME'],
+=======
+        tpu=[os.environ['TPU_NAME']],
+>>>>>>> fa8f08c2d5442242cfa4878d8bb81f4a507f2c4f
         project=os.environ['PROJECT_NAME'],
         zone=os.environ['PROJECT_ZONE'])
     config = tpu_config.RunConfig(
@@ -314,6 +319,7 @@ def dsd_100_experiment(model_config):
             per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
     print("Creating datasets")
+<<<<<<< HEAD
     # TODO: generalize variables
     if model_config['dataset_name'] == 'urmp':
         urmp_train, urmp_eval = [urmp_input.URMPInput(
@@ -327,6 +333,13 @@ def dsd_100_experiment(model_config):
             data_dir=model_config['data_path'],
             transpose_input=False,
             use_bfloat16=True) for is_training in [True, False]]
+=======
+    urmp_train, urmp_eval = [urmp_input.URMPInput(
+        is_training=is_training,
+        data_dir=model_config['urmp_path'],
+        transpose_input=False,
+        use_bfloat16=model_config['use_bfloat16']) for is_training in [True, False]]
+>>>>>>> fa8f08c2d5442242cfa4878d8bb81f4a507f2c4f
 
     print("Assigning TPUEstimator")
     # Optimize in a +supervised fashion until validation loss worsens
