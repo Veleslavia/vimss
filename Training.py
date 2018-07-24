@@ -13,6 +13,7 @@ from tensorflow.contrib import summary
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
+from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.python.estimator import estimator
 
 import librosa
@@ -149,7 +150,8 @@ def unet_separator(features, labels, mode, params):
     sources = labels
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
-    if model_config["network"] == "unet":
+
+    with bfloat16.bfloat16_scope():
         separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
             model_config["num_layers"], model_config["num_initial_filters"],
             output_type=model_config["output_type"],
@@ -159,8 +161,6 @@ def unet_separator(features, labels, mode, params):
             num_sources=model_config["num_sources"],
             filter_size=model_config["filter_size"],
             merge_filter_size=model_config["merge_filter_size"])
-    else:
-        raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
 
