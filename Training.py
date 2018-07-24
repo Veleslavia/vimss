@@ -6,6 +6,7 @@ import os
 from Input import urmp_input
 from Input import musdb_input
 import Utils
+import Test
 import Models.UnetAudioSeparator
 
 from tensorflow.contrib.cluster_resolver import TPUClusterResolver
@@ -15,8 +16,6 @@ from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.python.estimator import estimator
-
-import librosa
 
 ex = Experiment('Conditioned-Waveunet')
 
@@ -84,29 +83,29 @@ def full_multi_instrument():
         "context": True,
         "upsampling": "linear",
         "mono_downmix": True,
-        "task" : "multi_instrument"
+        "task": "multi_instrument"
     }
 
 @ex.named_config
 def urmp():
     print("Training multi-instrument separation with URMP dataset")
     model_config = {
-        "dataset_name" : "urmp"
-        "data_path": "gs://urmp-tfrecords-context",
-        "estimates_path": "gs://urmpv2-estimates",
-        "model_base_dir": "gs://checkpoints/urmpv2-tpu-checkpoints", # Base folder for model checkpoints
+        "dataset_name": "urmp",
+        "data_path": "gs://vimsstfrecords/urmp-tfrecords-context",
+        "estimates_path": "estimates",
+        "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
         "output_type": "difference",
         "context": True,
         "upsampling": "linear",
         "mono_downmix": True,
-        "task" : "multi_instrument"
+        "task": "multi_instrument"
     }
 
 @ex.named_config
 def musdb():
     print("Training multi-instrument separation with MusDB dataset")
     model_config = {
-        "dataset_name" : "musdb"
+        "dataset_name": "musdb",
         "data_path": "gs://vimsstfrecords/",
         "estimates_path": "estimates",
         "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
@@ -114,7 +113,7 @@ def musdb():
         "context": True,
         "upsampling": "linear",
         "mono_downmix": True,
-        "task" : "multi_instrument"
+        "task": "multi_instrument"
     }
 
 @ex.named_config
@@ -213,7 +212,7 @@ def unet_separator(features, labels, mode, params):
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-    separator_loss = tf.losses.mean_squared_error(sources, separator_sources)
+    separator_loss = tf.cast(tf.reduce_sum(tf.squared_difference(sources, separator_sources)), tf.float32)
 
     if mode != tf.estimator.ModeKeys.PREDICT:
         global_step = tf.train.get_global_step()
@@ -297,7 +296,7 @@ def dsd_100_experiment(model_config):
     print("Creating datasets")
     urmp_train, urmp_eval = [urmp_input.URMPInput(
         is_training=is_training,
-        data_dir=model_config['urmp_path'],
+        data_dir=model_config['data_path'],
         transpose_input=False,
         use_bfloat16=False) for is_training in [True, False]]
 
@@ -319,16 +318,11 @@ def dsd_100_experiment(model_config):
         current_step = estimator._load_global_step_from_checkpoint_dir(
             model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
     else:
-
-    # Should be an early stopping here, but it will come with tf 1.10
-    if model_config['dataset_name'] == 'urmp':
-        separator.train(
-            input_fn=urmp_train.input_fn,
-            steps=model_config['training_steps'])
-    elif model_config['dataset_name'] == 'musdb':
-        separator.train(
-            input_fn=musdb_train.input_fn,
-            steps=model_config['training_steps'])
+        # Should be an early stopping here, but it will come with tf 1.10
+        if model_config['dataset_name'] == 'urmp':
+            separator.train(
+                input_fn=urmp_train.input_fn,
+                steps=model_config['training_steps'])
 
     print("Supervised training finished!")
 
@@ -339,49 +333,18 @@ def dsd_100_experiment(model_config):
             eval_result = separator.evaluate(
                 input_fn=urmp_eval.input_fn,
                 steps=model_config['evaluation_steps'])
-
-        elif model_config['dataset_name'] == 'musdb':
-            eval_result = separator.evaluate(
-                input_fn=musdb_eval.input_fn,
-                steps=model_config['evaluation_steps'])
     else:
         print("Test results and save predicted sources:")
         if model_config['dataset_name'] == 'urmp':
             predictions = separator.predict(
                 input_fn=urmp_eval.input_fn)
 
-        elif model_config['dataset_name'] == 'musdb':
-            predictions = separator.predict(
-                input_fn=musdb_eval.input_fn)
-
-
-        for prediction in predictions:
-            estimates_dir = model_config["estimates_path"] + os.path.sep + prediction['filename']
-            if not os.path.exists(estimates_dir):
-                os.makedirs(estimates_dir)
-                os.makedirs(estimates_dir + os.path.sep + 'mix')
-                for source_name in range(len(prediction['sources'])):
-                    os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
-            mix_audio_path = "{basedir}{sep}mix{sep}{sampleid}.wav".format(
-                basedir=estimates_dir,
-                sep=os.path.sep,
-                sampleid="%.4d" % prediction['sample_id']
-            )
-            librosa.output.write_wav(mix_audio_path,
-                                     prediction['mix'],
-                                     sr=model_config["expected_sr"])
-            for source_name in range(len(prediction['sources'])):
-                source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
-                    basedir=estimates_dir,
-                    sep=os.path.sep,
-                    sname=source_name,
-                    sampleid="%.4d" % prediction['sample_id']
-                )
-                librosa.output.write_wav(source_path,
-                                         prediction['sources'][source_name],
-                                         sr=model_config["expected_sr"])
-        Utils.concat_and_upload(model_config["estimates_path"],
-                                model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
+            for prediction in predictions:
+                Test.save_prediction(prediction,
+                                     estimates_path=model_config["estimathes_path"],
+                                     sample_rate=model_config["expected_sr"])
+            Utils.concat_and_upload(model_config["estimates_path"],
+                                    model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)

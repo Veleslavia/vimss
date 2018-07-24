@@ -9,6 +9,8 @@ import Utils
 import functools
 from tensorflow.contrib.signal.python.ops import window_ops
 
+import librosa
+
 def test(model_config, audio_list, model_folder, load_model):
     # Determine input and output shapes
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]  # Shape of discriminator input
@@ -103,3 +105,30 @@ def test(model_config, audio_list, model_folder, load_model):
     tf.reset_default_graph()
 
     return mean_mse_loss
+
+
+def save_prediction(prediction, estimates_path, sample_rate=22050):
+    estimates_dir = estimates_path + os.path.sep + prediction['filename']
+    if not os.path.exists(estimates_dir):
+        os.makedirs(estimates_dir)
+        os.makedirs(estimates_dir + os.path.sep + 'mix')
+        for source_name in range(len(prediction['sources'])):
+            os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
+    mix_audio_path = "{basedir}{sep}mix{sep}{sampleid}.wav".format(
+        basedir=estimates_dir,
+        sep=os.path.sep,
+        sampleid="%.4d" % prediction['sample_id']
+    )
+    librosa.output.write_wav(mix_audio_path,
+                             prediction['mix'],
+                             sr=sample_rate)
+    for source_name in range(len(prediction['sources'])):
+        source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
+            basedir=estimates_dir,
+            sep=os.path.sep,
+            sname=source_name,
+            sampleid="%.4d" % prediction['sample_id']
+        )
+        librosa.output.write_wav(source_path,
+                                 prediction['sources'][source_name],
+                                 sr=sample_rate)
