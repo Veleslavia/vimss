@@ -36,7 +36,7 @@ def cfg():
                     "use_tpu": True,
                     "load_model": False,
                     "predict_only": False,
-                    "audio_summaries_every_n_steps": 100000,
+                    "audio_summaries_every_n_steps": 1000000,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -221,7 +221,6 @@ def unet_separator(features, labels, mode, params):
     # TODO add learning rate schedule
     # TODO add early stopping
     if mode == tf.estimator.ModeKeys.TRAIN:
-        print('===============================')
         separator_vars = Utils.getTrainableVariables("separator")
         print("Sep_Vars: " + str(Utils.getNumParams(separator_vars)))
         print("Num of variables: " + str(len(tf.global_variables())))
@@ -262,8 +261,8 @@ def dsd_100_experiment(model_config):
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
-        save_checkpoints_steps=500,
-        save_summary_steps=250,
+        save_checkpoints_steps=20000,
+        save_summary_steps=10000,
         tpu_config=tpu_config.TPUConfig(
             iterations_per_loop=500,
             num_shards=8,
