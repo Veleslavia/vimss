@@ -8,9 +8,6 @@ import skimage.io as io
 import tensorflow as tf
 from soundfile import SoundFile
 
-import Metadata
-
-
 def createSynthAudioBatch(batch_size, num_frames):
     '''
     Create three batches of audio examples [batch_size, freq_bins, time_frames, 1] and return them as a list
