@@ -13,6 +13,7 @@ from tensorflow.contrib import summary
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
+from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.python.estimator import estimator
 
 import librosa
@@ -150,7 +151,7 @@ def unet_separator(features, labels, mode, params):
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
 
-    with tf.contrib.tpu.bfloat16_scope():
+    with bfloat16.bfloat16_scope():
         separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
             model_config["num_layers"], model_config["num_initial_filters"],
             output_type=model_config["output_type"],
