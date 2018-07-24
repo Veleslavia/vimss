@@ -4,8 +4,8 @@ import numpy as np
 import os
 
 from Input import urmp_input
+from Input import musdb_input
 import Utils
-import Models.UnetSpectrogramSeparator
 import Models.UnetAudioSeparator
 
 from tensorflow.contrib.cluster_resolver import TPUClusterResolver
@@ -13,20 +13,17 @@ from tensorflow.contrib import summary
 from tensorflow.contrib.tpu.python.tpu import tpu_config
 from tensorflow.contrib.tpu.python.tpu import tpu_estimator
 from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
+from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.python.estimator import estimator
 
 import librosa
 
-ex = Experiment('Waveunet')
+ex = Experiment('Conditioned-Waveunet')
 
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {#"urmp_path": "gs://vimsstfrecords/urmpv2", # SET URMP PATH HERE
-                    "urmp_path": "gs://urmp-tfrecords-context",
-                    "estimates_path": "gs://urmpv2-estimates", # SET THIS PATH TO WHERE YOU WANT SOURCE ESTIMATES
-                    # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
-                    "model_base_dir": "gs://checkpoints/urmpv2-tpu-checkpoints", # Base folder for model checkpoints
+    model_config = {                    # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 64, # Batch size
                     "init_sup_sep_lr": 1e-5, # Supervised separator learning rate
@@ -36,7 +33,8 @@ def cfg():
                     "use_tpu": True,
                     "load_model": False,
                     "predict_only": False,
-                    "audio_summaries_every_n_steps": 1000000,
+                    "write_audio_summaries": False,
+                    "audio_summaries_every_n_steps": 10000,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
                     'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
                     'num_workers' : 6, # Number of processes reading audio and filling up the cache
@@ -90,6 +88,36 @@ def full_multi_instrument():
     }
 
 @ex.named_config
+def urmp():
+    print("Training multi-instrument separation with URMP dataset")
+    model_config = {
+        "dataset_name" : "urmp"
+        "data_path": "gs://urmp-tfrecords-context",
+        "estimates_path": "gs://urmpv2-estimates",
+        "model_base_dir": "gs://checkpoints/urmpv2-tpu-checkpoints", # Base folder for model checkpoints
+        "output_type": "difference",
+        "context": True,
+        "upsampling": "linear",
+        "mono_downmix": True,
+        "task" : "multi_instrument"
+    }
+
+@ex.named_config
+def musdb():
+    print("Training multi-instrument separation with MusDB dataset")
+    model_config = {
+        "dataset_name" : "musdb"
+        "data_path": "gs://vimsstfrecords/",
+        "estimates_path": "estimates",
+        "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
+        "output_type": "difference",
+        "context": True,
+        "upsampling": "linear",
+        "mono_downmix": True,
+        "task" : "multi_instrument"
+    }
+
+@ex.named_config
 def baseline_comparison():
     model_config = {
         "batch_size": 4, # Less output since model is so big.
@@ -107,10 +135,12 @@ def baseline_comparison():
 
 @ex.capture
 def unet_separator(features, labels, mode, params):
-    print('unet separator')
 
     # Define host call function
-    def host_call_fn(gs, loss, lr, mix, gt_sources, est_sources):
+    def host_call_fn(gs, loss, lr,
+            mix=None,
+            gt_sources=None,
+            est_sources=None):
             """Training host call. Creates scalar summaries for training metrics.
             This function is executed on the CPU and should not directly reference
             any Tensors in the rest of the `model_fn`. To pass Tensors from the
@@ -145,12 +175,11 @@ def unet_separator(features, labels, mode, params):
             return summary.all_summary_ops()
 
     mix = features['mix']
-    #filename = features['filename']
-    sample_id = features['sample_id']
     sources = labels
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
-    if model_config["network"] == "unet":
+
+    with bfloat16.bfloat16_scope():
         separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
             model_config["num_layers"], model_config["num_initial_filters"],
             output_type=model_config["output_type"],
@@ -160,8 +189,6 @@ def unet_separator(features, labels, mode, params):
             num_sources=model_config["num_sources"],
             filter_size=model_config["filter_size"],
             merge_filter_size=model_config["merge_filter_size"])
-    else:
-        raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
 
@@ -181,8 +208,8 @@ def unet_separator(features, labels, mode, params):
         predictions = {
             'mix': mix,
             'sources': separator_sources,
-            'filename': filename,
-            'sample_id': sample_id
+            'filename': features['filename'],
+            'sample_id': features['sample_id']
         }
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
@@ -199,8 +226,10 @@ def unet_separator(features, labels, mode, params):
         loss_t = tf.reshape(separator_loss, [1])
         lr_t = tf.reshape(sep_lr, [1])
 
-        host_call = (host_call_fn, [gs_t, loss_t, lr_t, mix, sources, separator_sources])
-
+        if model_config["write_audio_summaries"]:
+            host_call = (host_call_fn, [gs_t, loss_t, lr_t, mix, sources, separator_sources])
+        else:
+            host_call = (host_call_fn, [gs_t, loss_t, lr_t, tf.zeros((1)), tf.zeros((1)), tf.zeros((1))])
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
@@ -242,10 +271,6 @@ def unet_separator(features, labels, mode, params):
 @ex.automain
 def dsd_100_experiment(model_config):
 
-    tpu_name = os.environ['TPU_NAME']
-    gcp_name = "jeju-dl"
-    gcp_zone = "us-central1-f"
-
     print("SCRIPT START")
 
     # Create subfolders if they do not exist to save results
@@ -256,14 +281,14 @@ def dsd_100_experiment(model_config):
     print("TPU resolver started")
 
     tpu_cluster_resolver = TPUClusterResolver(
-        tpu=tpu_name,
-        project=gcp_name,
-        zone=gcp_zone)
+        tpu=[os.environ['TPU_NAME']],
+        project=[os.environ['PROJECT_NAME']],
+        zone=[os.environ['PROJECT_ZONE']])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
-        save_checkpoints_steps=20000,
-        save_summary_steps=10000,
+        save_checkpoints_steps=500,
+        save_summary_steps=250,
         tpu_config=tpu_config.TPUConfig(
             iterations_per_loop=500,
             num_shards=8,
@@ -294,23 +319,41 @@ def dsd_100_experiment(model_config):
         current_step = estimator._load_global_step_from_checkpoint_dir(
             model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
     else:
-        print("separator.train")
+
+    # Should be an early stopping here, but it will come with tf 1.10
+    if model_config['dataset_name'] == 'urmp':
         separator.train(
             input_fn=urmp_train.input_fn,
-            steps=model_config['training_steps']) # Should be an early stopping here, but it will come with tf 1.10
+            steps=model_config['training_steps'])
+    elif model_config['dataset_name'] == 'musdb':
+        separator.train(
+            input_fn=musdb_train.input_fn,
+            steps=model_config['training_steps'])
 
     print("Supervised training finished!")
 
     if not model_config["predict_only"]:
         print("Evaluate model")
         # Evaluate the model.
-        eval_result = separator.evaluate(
-            input_fn=urmp_eval.input_fn,
-            steps=model_config['evaluation_steps'])
+        if model_config['dataset_name'] == 'urmp':
+            eval_result = separator.evaluate(
+                input_fn=urmp_eval.input_fn,
+                steps=model_config['evaluation_steps'])
+
+        elif model_config['dataset_name'] == 'musdb':
+            eval_result = separator.evaluate(
+                input_fn=musdb_eval.input_fn,
+                steps=model_config['evaluation_steps'])
     else:
         print("Test results and save predicted sources:")
-        predictions = separator.predict(
-            input_fn=urmp_eval.input_fn)
+        if model_config['dataset_name'] == 'urmp':
+            predictions = separator.predict(
+                input_fn=urmp_eval.input_fn)
+
+        elif model_config['dataset_name'] == 'musdb':
+            predictions = separator.predict(
+                input_fn=musdb_eval.input_fn)
+
 
         for prediction in predictions:
             estimates_dir = model_config["estimates_path"] + os.path.sep + prediction['filename']
@@ -319,7 +362,11 @@ def dsd_100_experiment(model_config):
                 os.makedirs(estimates_dir + os.path.sep + 'mix')
                 for source_name in range(len(prediction['sources'])):
                     os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
-            mix_audio_path = estimates_dir + os.path.sep + 'mix' + os.path.sep + str(prediction['sample_id']) + '.wav'
+            mix_audio_path = "{basedir}{sep}mix{sep}{sampleid}.wav".format(
+                basedir=estimates_dir,
+                sep=os.path.sep,
+                sampleid="%.4d" % prediction['sample_id']
+            )
             librosa.output.write_wav(mix_audio_path,
                                      prediction['mix'],
                                      sr=model_config["expected_sr"])
@@ -328,12 +375,13 @@ def dsd_100_experiment(model_config):
                     basedir=estimates_dir,
                     sep=os.path.sep,
                     sname=source_name,
-                    sampleid=str(prediction['sample_id'])
+                    sampleid="%.4d" % prediction['sample_id']
                 )
                 librosa.output.write_wav(source_path,
                                          prediction['sources'][source_name],
                                          sr=model_config["expected_sr"])
-        Utils.concat_sources(model_config["estimates_path"])
+        Utils.concat_and_upload(model_config["estimates_path"],
+                                model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)

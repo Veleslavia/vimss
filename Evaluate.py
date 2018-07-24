@@ -12,7 +12,6 @@ import glob
 
 from Input import Input
 import Models.UnetAudioSeparator
-import Models.UnetSpectrogramSeparator
 
 import musdb
 import museval
@@ -56,12 +55,6 @@ def predict(track):
                                                                    num_sources=model_config["num_sources"],
                                                                    filter_size=model_config["filter_size"],
                                                                    merge_filter_size=model_config["merge_filter_size"])
-    elif model_config["network"] == "unet_spectrogram":
-        separator_class = Models.UnetSpectrogramSeparator.UnetSpectrogramSeparator(model_config["num_layers"], model_config["num_initial_filters"],
-                                                                       mono=model_config["mono_downmix"],
-                                                                       num_sources=model_config["num_sources"])
-    else:
-        raise NotImplementedError
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
     separator_func = separator_class.get_output
@@ -179,21 +172,6 @@ def predict_track(model_config, sess, mix_audio, mix_sr, sep_input_shape, sep_ou
 
     return source_preds
 
-def produce_source_estimates(model_config, load_model, musdb_path, output_path, subsets=None):
-    '''
-    Predicts source estimates for MUSDB for a given model checkpoint and configuration, and evaluate them.
-    :param model_config: Model configuration of the model to be evaluated
-    :param load_model: Model checkpoint path
-    :return: 
-    '''
-    prediction_parameters = [model_config, load_model]
-    with open("prediction_params.pkl", "wb") as file:
-        pickle.dump(prediction_parameters, file)
-
-    mus = musdb.DB(root_dir=musdb_path)
-    #if mus.test(predict):
-    #    print "Function is valid"
-    mus.run(predict, estimates_dir=output_path, subsets=subsets)
 
 def compute_mean_metrics(json_folder, compute_averages=True):
     files = glob.glob(os.path.join(json_folder, "*.json"))
@@ -236,35 +214,3 @@ def draw_violin_sdr(json_folder):
 
     fig.set_size_inches(8, 3.)
     fig.savefig("sdr_histogram.pdf", bbox_inches='tight')
-
-def draw_spectrogram(example_wav="musb_005_angela thomas wade_audio_model_without_context_cut_28234samples_61002samples_93770samples_126538.wav"):
-    y, sr = librosa.load(example_wav, sr=None)
-    spec = np.abs(librosa.stft(y, 512, 256, 512))
-    norm_spec = librosa.power_to_db(spec**2)
-    black_time_frames = np.array([28234, 61002, 93770, 126538]) / 256.0
-
-    fig, ax = plt.subplots()
-    img = ax.imshow(norm_spec)
-    plt.vlines(black_time_frames, [0, 0, 0, 0], [10, 10, 10, 10], colors="red", lw=2, alpha=0.5)
-    plt.vlines(black_time_frames, [256, 256, 256, 256], [246, 246, 246, 246], colors="red", lw=2, alpha=0.5)
-
-    divider = make_axes_locatable(ax)
-    cax = divider.append_axes("right", size="5%", pad=0.1)
-    plt.colorbar(img, cax=cax)
-
-    ax.xaxis.set_label_position("bottom")
-    #ticks_x = ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x * 256.0 / sr))
-    #ax.xaxis.set_major_formatter(ticks_x)
-    ax.xaxis.set_major_locator(ticker.FixedLocator(([i * sr / 256. for i in range(len(y)//sr + 1)])))
-    ax.xaxis.set_major_formatter(ticker.FixedFormatter(([str(i) for i in range(len(y)//sr + 1)])))
-
-    ax.yaxis.set_major_locator(ticker.FixedLocator(([float(i) * 2000.0 / (sr/2.0) * 256. for i in range(6)])))
-    ax.yaxis.set_major_formatter(ticker.FixedFormatter([str(i*2) for i in range(6)]))
-
-    ax.set_xlabel("t (s)")
-    ax.set_ylabel('f (KHz)')
-
-    fig.set_size_inches(7., 3.)
-    fig.savefig("spectrogram_example.pdf", bbox_inches='tight')
-
-#compute_mean_metrics("/mnt/windaten/Source_Estimates/endtoend/", False)

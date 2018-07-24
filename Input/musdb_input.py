@@ -63,10 +63,11 @@ class MusDBInput(object):
             tf.TensorShape([batch_size, None, None])))
         sources.set_shape(sources.get_shape().merge_with(
             tf.TensorShape([batch_size, None, None, None])))
-        features['filename'].set_shape(features['filename'].get_shape().merge_with(
-            tf.TensorShape([batch_size])))
-        features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
-            tf.TensorShape([batch_size])))
+        if not self.is_training:
+            features['filename'].set_shape(features['filename'].get_shape().merge_with(
+                tf.TensorShape([batch_size])))
+            features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
+                tf.TensorShape([batch_size])))
 
         return features, sources
 
@@ -91,12 +92,16 @@ class MusDBInput(object):
 
         parsed = tf.parse_single_example(value, keys_to_features)
         audio_data = tf.sparse_tensor_to_dense(parsed['audio/encoded'], default_value=0)
-        #audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), \
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
-        features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+        mix = tf.cast(mix, tf.bfloat16)
+        sources = tf.cast(sources, tf.bfloat16)
+        if self.is_training:
+            features = {'mix': mix}
+        else:
+            features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):
@@ -139,13 +144,6 @@ class MusDBInput(object):
                 self.dataset_parser, batch_size=batch_size,
                 num_parallel_batches=8,    # 8 == num_cores per host
                 drop_remainder=True))
-
-        # Transpose for performance on TPU
-        # TODO what does it do?
-        # if self.transpose_input:
-        #     dataset = dataset.map(
-        #         lambda images, labels: (tf.transpose(images, [1, 2, 3, 0]), labels),
-        #         num_parallel_calls=8)
 
         # Assign static batch size dimension
         dataset = dataset.map(functools.partial(self.set_shapes, batch_size))

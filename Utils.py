@@ -1,3 +1,4 @@
+import os
 import tensorflow as tf
 import numpy as np
 import librosa
@@ -21,7 +22,7 @@ def getNumParams(tensors):
 def crop_and_concat(x1,x2, match_feature_dim=True):
     '''
     Copy-and-crop operation for two feature maps of different size.
-    Crops the first input x1 equally along its borders so that its shape is equal to 
+    Crops the first input x1 equally along its borders so that its shape is equal to
     the shape of the second input x2, then concatenates them along the feature channel axis.
     :param x1: First input that is cropped and combined with the second input
     :param x2: Second input
@@ -43,10 +44,10 @@ def sdr_loss(reference_signals, estimates):
 def pad_freqs(tensor, target_shape):
     '''
     Pads the frequency axis of a 4D tensor of shape [batch_size, freqs, timeframes, channels] or 2D tensor [freqs, timeframes] with zeros
-    so that it reaches the target shape. If the number of frequencies to pad is uneven, the rows are appended at the end. 
+    so that it reaches the target shape. If the number of frequencies to pad is uneven, the rows are appended at the end.
     :param tensor: Input tensor to pad with zeros along the frequency axis
     :param target_shape: Shape of tensor after zero-padding
-    :return: 
+    :return:
     '''
     target_freqs = (target_shape[1] if len(target_shape) == 4 else target_shape[0]) #TODO
     if isinstance(tensor, tf.Tensor):
@@ -81,9 +82,9 @@ def learned_interpolation_layer(input, padding, level):
     Interpolation of intermediate feature vectors v_1 and v_2 (of dimensionality F) is performed by
      w \cdot v_1 + (1-w) \cdot v_2, where \cdot is point-wise multiplication, and w an F-dimensional weight vector constrained to [0,1]
     :param input: Input features of shape [batch_size, 1, width, F]
-    :param padding: 
-    :param level: 
-    :return: 
+    :param padding:
+    :param level:
+    :return:
     '''
     assert(padding == "valid" or padding == "same")
     features = input.get_shape().as_list()[3]
@@ -178,7 +179,7 @@ def crop(tensor, target_shape, match_feature_dim=True):
     '''
     Crops a 3D tensor [batch_size, width, channels] along the width axes to a target shape.
     Performs a centre crop. If the dimension difference is uneven, crop last dimensions first.
-    :param tensor: 4D tensor [batch_size, width, height, channels] that should be cropped. 
+    :param tensor: 4D tensor [batch_size, width, height, channels] that should be cropped.
     :param target_shape: Target shape (4D tensor) that the tensor should be cropped to
     :return: Cropped tensor
     '''
@@ -196,5 +197,15 @@ def crop(tensor, target_shape, match_feature_dim=True):
     return tensor[:,crop_start[1]:-crop_end[1],:]
 
 
-def concat_sources(estimates_path):
-    pass
+def concat_and_upload(estimates_path, model_base_path, sr=22050):
+
+    for root, dirs, files in os.walk(estimates_path):
+        if not files:
+            continue
+        files.sort()
+        audio_data = np.concatenate([librosa.core.load(os.path.join(root, name))[0] for name in files])
+        librosa.output.write_wav(root+'.wav', audio_data, sr)
+        for name in files:
+            os.remove(os.path.join(root, name))
+        os.rmdir(root)
+        # TODO add upload
