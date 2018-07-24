@@ -281,8 +281,8 @@ def dsd_100_experiment(model_config):
 
     tpu_cluster_resolver = TPUClusterResolver(
         tpu=[os.environ['TPU_NAME']],
-        project=[os.environ['PROJECT_NAME']],
-        zone=[os.environ['PROJECT_ZONE']])
+        project=os.environ['PROJECT_NAME'],
+        zone=os.environ['PROJECT_ZONE'])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
