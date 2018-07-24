@@ -134,7 +134,7 @@ def unet_separator(features, labels, mode, params):
                 with summary.always_record_summaries():
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
-                if gs % 1000 == 0:
+                if gs % 10000 == 0:
                     with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
                         summary.audio('mix', mix, model_config['expected_sr'], max_outputs=model_config["num_sources"])
                         for source_id in range(gt_sources.shape[1].value):
@@ -242,7 +242,7 @@ def unet_separator(features, labels, mode, params):
 @ex.automain
 def dsd_100_experiment(model_config):
 
-    tpu_name = "leo4-tpu"
+    tpu_name = os.environ['TPU_NAME']
     gcp_name = "jeju-dl"
     gcp_zone = "us-central1-f"
 
