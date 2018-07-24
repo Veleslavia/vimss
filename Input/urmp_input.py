@@ -120,7 +120,6 @@ class URMPInput(object):
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
-
         labels = tf.sparse_tensor_to_dense(parsed['audio/labels'])
         labels = tf.reshape(labels, tf.stack([NUM_SOURCES]))
 
