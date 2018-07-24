@@ -93,13 +93,13 @@ class UnetAudioSeparator:
             for i in range(self.num_layers):
                 #UPSAMPLING
                 current_layer = tf.expand_dims(current_layer, axis=1)
-
                 if self.upsampling == 'learned':
                     # Learned interpolation between two neighbouring time positions by using a convolution filter of width 2, and inserting the responses in the middle of the two respective inputs
                     current_layer = Utils.learned_interpolation_layer(current_layer, self.padding, i)
                 else:
                     if self.context:
                         current_layer = tf.image.resize_bilinear(current_layer, [1, current_layer.get_shape().as_list()[2] * 2 - 1], align_corners=True)
+                        current_layer = tf.cast(current_layer, tf.bfloat16)
                     else:
                         current_layer = tf.image.resize_bilinear(current_layer, [1, current_layer.get_shape().as_list()[2]*2]) # out = in + in - 1
                 #current_layer = tf.layers.conv2d_transpose(current_layer, self.num_initial_filters + (16 * (self.num_layers-i-1)), [1, 15], strides=[1, 2], activation=LeakyReLU, padding='same') # output = input * stride + filter - stride
