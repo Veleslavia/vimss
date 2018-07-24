@@ -91,7 +91,7 @@ def full_multi_instrument():
 def urmp():
     print("Training multi-instrument separation with URMP dataset")
     model_config = {
-        "dataset_name" : "urmp"
+        "dataset_name" : "urmp",
         "data_path": "gs://urmp-tfrecords-context",
         "estimates_path": "gs://urmpv2-estimates",
         "model_base_dir": "gs://checkpoints/urmpv2-tpu-checkpoints", # Base folder for model checkpoints
@@ -106,7 +106,7 @@ def urmp():
 def musdb():
     print("Training multi-instrument separation with MusDB dataset")
     model_config = {
-        "dataset_name" : "musdb"
+        "dataset_name" : "musdb",
         "data_path": "gs://vimsstfrecords/",
         "estimates_path": "estimates",
         "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
@@ -165,7 +165,8 @@ def unet_separator(features, labels, mode, params):
                     summary.scalar('loss', loss[0], step=gs)
                     summary.scalar('learning_rate', lr[0], step=gs)
                 if gs % 10000 == 0:
-                    with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
+                    #with summary.record_summaries_every_n_global_steps(model_config["audio_summaries_every_n_steps"]):
+                    with summary.always_record_summaries():
                         summary.audio('mix', mix, model_config['expected_sr'], max_outputs=model_config["num_sources"])
                         for source_id in range(gt_sources.shape[1].value):
                             summary.audio('gt_sources_{source_id}'.format(source_id=source_id), gt_sources[:, source_id, :, :],
@@ -179,16 +180,27 @@ def unet_separator(features, labels, mode, params):
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
 
-    with bfloat16.bfloat16_scope():
-        separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
-            model_config["num_layers"], model_config["num_initial_filters"],
-            output_type=model_config["output_type"],
-            context=model_config["context"],
-            mono=model_config["mono_downmix"],
-            upsampling=model_config["upsampling"],
-            num_sources=model_config["num_sources"],
-            filter_size=model_config["filter_size"],
-            merge_filter_size=model_config["merge_filter_size"])
+    # TODO: condition on model_config
+    separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
+        model_config["num_layers"], model_config["num_initial_filters"],
+        output_type=model_config["output_type"],
+        context=model_config["context"],
+        mono=model_config["mono_downmix"],
+        upsampling=model_config["upsampling"],
+        num_sources=model_config["num_sources"],
+        filter_size=model_config["filter_size"],
+        merge_filter_size=model_config["merge_filter_size"])
+
+    #with bfloat16.bfloat16_scope():
+    #    separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
+    #        model_config["num_layers"], model_config["num_initial_filters"],
+    #        output_type=model_config["output_type"],
+    #        context=model_config["context"],
+    #        mono=model_config["mono_downmix"],
+    #        upsampling=model_config["upsampling"],
+    #        num_sources=model_config["num_sources"],
+    #        filter_size=model_config["filter_size"],
+    #        merge_filter_size=model_config["merge_filter_size"])
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
 
@@ -295,11 +307,19 @@ def dsd_100_experiment(model_config):
             per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
     print("Creating datasets")
-    urmp_train, urmp_eval = [urmp_input.URMPInput(
-        is_training=is_training,
-        data_dir=model_config['urmp_path'],
-        transpose_input=False,
-        use_bfloat16=False) for is_training in [True, False]]
+    # TODO: generalize variables
+    if model_config['dataset_name'] == 'urmp':
+        urmp_train, urmp_eval = [urmp_input.URMPInput(
+            is_training=is_training,
+            data_dir=model_config['data_path'],
+            transpose_input=False,
+            use_bfloat16=False) for is_training in [True, False]]
+    elif model_config['dataset_name'] == 'musdb':
+        musdb_train, musdb_eval = [musdb_input.MusDBInput(
+            is_training=is_training,
+            data_dir=model_config['data_path'],
+            transpose_input=False,
+            use_bfloat16=True) for is_training in [True, False]]
 
     print("Assigning TPUEstimator")
     # Optimize in a +supervised fashion until validation loss worsens
@@ -320,15 +340,15 @@ def dsd_100_experiment(model_config):
             model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
     else:
 
-    # Should be an early stopping here, but it will come with tf 1.10
-    if model_config['dataset_name'] == 'urmp':
-        separator.train(
-            input_fn=urmp_train.input_fn,
-            steps=model_config['training_steps'])
-    elif model_config['dataset_name'] == 'musdb':
-        separator.train(
-            input_fn=musdb_train.input_fn,
-            steps=model_config['training_steps'])
+        # Should be an early stopping here, but it will come with tf 1.10
+        if model_config['dataset_name'] == 'urmp':
+            separator.train(
+                input_fn=urmp_train.input_fn,
+                steps=model_config['training_steps'])
+        elif model_config['dataset_name'] == 'musdb':
+            separator.train(
+                input_fn=musdb_train.input_fn,
+                steps=model_config['training_steps'])
 
     print("Supervised training finished!")
 

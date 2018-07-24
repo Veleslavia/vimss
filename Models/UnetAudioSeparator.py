@@ -99,7 +99,8 @@ class UnetAudioSeparator:
                 else:
                     if self.context:
                         current_layer = tf.image.resize_bilinear(current_layer, [1, current_layer.get_shape().as_list()[2] * 2 - 1], align_corners=True)
-                        current_layer = tf.cast(current_layer, tf.bfloat16)
+                        # TODO: condition on dataset
+                        #current_layer = tf.cast(current_layer, tf.bfloat16)
                     else:
                         current_layer = tf.image.resize_bilinear(current_layer, [1, current_layer.get_shape().as_list()[2]*2]) # out = in + in - 1
                 #current_layer = tf.layers.conv2d_transpose(current_layer, self.num_initial_filters + (16 * (self.num_layers-i-1)), [1, 15], strides=[1, 2], activation=LeakyReLU, padding='same') # output = input * stride + filter - stride
