@@ -97,8 +97,13 @@ class URMPInput(object):
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
-        #features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
-        features = {'mix': mix, 'sample_id': parsed['audio/sample_idx']}
+        if self.use_bfloat16:
+            mix = tf.cast(mix, tf.bfloat16)
+            sources = tf.cast(sources, tf.bfloat16)
+        if not self.is_training:
+            features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+        else:
+            features = {'mix': mix, 'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):

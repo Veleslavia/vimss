@@ -31,6 +31,7 @@ def cfg():
                     "training_steps": 2000*100, # Number of training steps per training
                     "evaluation_steps": 1000,
                     "use_tpu": True,
+                    "use_bfloat16": True,
                     "load_model": False,
                     "predict_only": False,
                     "write_audio_summaries": False,
@@ -299,7 +300,7 @@ def dsd_100_experiment(model_config):
         is_training=is_training,
         data_dir=model_config['urmp_path'],
         transpose_input=False,
-        use_bfloat16=False) for is_training in [True, False]]
+        use_bfloat16=model_config['use_bfloat16']) for is_training in [True, False]]
 
     print("Assigning TPUEstimator")
     # Optimize in a +supervised fashion until validation loss worsens
