@@ -216,10 +216,17 @@ def unet_separator(features, labels, mode, params):
 
     if mode != tf.estimator.ModeKeys.PREDICT:
         global_step = tf.train.get_global_step()
-        sep_lr = tf.get_variable('unsup_sep_lr', [],
-                                 initializer=tf.constant_initializer(model_config["init_sup_sep_lr"],
-                                                                     dtype=tf.float32),
-                                 trainable=False)
+        decay_steps = model_config['evaluation_steps']*10
+        decay_rate = 0.96
+
+        sep_lr = tf.train.exponential_decay(
+                     model_config['init_sup_sep_lr'],
+                     global_step,
+                     decay_steps,
+                     decay_rate,
+                     staircase=False,
+                     name=None
+                 )
 
         gs_t = tf.reshape(global_step, [1])
         loss_t = tf.reshape(separator_loss, [1])
@@ -280,9 +287,9 @@ def dsd_100_experiment(model_config):
     print("TPU resolver started")
 
     tpu_cluster_resolver = TPUClusterResolver(
-        tpu=[os.environ['TPU_NAME']],
-        project=[os.environ['PROJECT_NAME']],
-        zone=[os.environ['PROJECT_ZONE']])
+        tpu=os.environ['TPU_NAME'],
+        project=os.environ['PROJECT_NAME'],
+        zone=os.environ['PROJECT_ZONE'])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
         model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
