@@ -110,9 +110,9 @@ def unet_separator(features, labels, mode, params):
 
     # Define host call function
     def host_call_fn(gs, loss, lr, 
-            mix=tf.placeholder(tf.float32), 
-            gt_sources=tf.placeholder(tf.float32), 
-            est_sources=tf.placeholder(tf.float32)):
+            mix=None, 
+            gt_sources=None, 
+            est_sources=None):
             """Training host call. Creates scalar summaries for training metrics.
             This function is executed on the CPU and should not directly reference
             any Tensors in the rest of the `model_fn`. To pass Tensors from the
@@ -201,7 +201,7 @@ def unet_separator(features, labels, mode, params):
         if model_config["write_audio_summaries"]:
             host_call = (host_call_fn, [gs_t, loss_t, lr_t, mix, sources, separator_sources])
         else:
-            host_call = (host_call_fn, [gs_t, loss_t, lr_t])
+            host_call = (host_call_fn, [gs_t, loss_t, lr_t, tf.zeros((1)), tf.zeros((1)), tf.zeros((1))])
 
     # Creating evaluation estimator
     if mode == tf.estimator.ModeKeys.EVAL:
