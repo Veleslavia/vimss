@@ -214,7 +214,6 @@ def unet_separator(features, labels, mode, params):
 
     if mode != tf.estimator.ModeKeys.PREDICT:
         global_step = tf.train.get_global_step()
-
         sep_lr = tf.train.exponential_decay(
                      model_config['init_sup_sep_lr'],
                      global_step,
