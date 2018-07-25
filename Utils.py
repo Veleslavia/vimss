@@ -2,6 +2,8 @@ import os
 import tensorflow as tf
 import numpy as np
 import librosa
+from google.cloud import storage
+
 
 # Slice up matrices into squares so the neural net gets a consistent size for training (doesnd't matter for inference)
 def chop(matrix, scale):
@@ -197,7 +199,33 @@ def crop(tensor, target_shape, match_feature_dim=True):
     return tensor[:,crop_start[1]:-crop_end[1],:]
 
 
-def concat_and_upload(estimates_path, model_base_path, sr=22050):
+def upload_to_gcs(filenames, gcs_bucket_path):
+    """Upload wave file to GCS, at provided path."""
+
+    path_parts = gcs_bucket_path[5:].split('/', 1)
+    bucket_name = path_parts[0]
+    if len(path_parts) == 1:
+        key_prefix = ''
+    elif path_parts[1].endswith('/'):
+        key_prefix = path_parts[1]
+    else:
+        key_prefix = path_parts[1] + '/'
+
+    client = storage.Client(project=os.environ["PROJECT_NAME"])
+    bucket = client.get_bucket(bucket_name)
+
+    def _upload_files(filenames):
+        """Upload a list of files into a specifc subdirectory."""
+        for i, filename in enumerate(filenames):
+            blob = bucket.blob(key_prefix + os.path.basename(filename))
+            blob.upload_from_filename(filename)
+            if not i % 5:
+                tf.logging.info('Finished uploading file: %s' % filename)
+
+    _upload_files(filenames)
+
+
+def concat_and_upload(estimates_path, gsc_estimates_path, sr=22050):
 
     for root, dirs, files in os.walk(estimates_path):
         if not files:
@@ -208,4 +236,4 @@ def concat_and_upload(estimates_path, model_base_path, sr=22050):
         for name in files:
             os.remove(os.path.join(root, name))
         os.rmdir(root)
-        # TODO add upload
+        upload_to_gcs([root+'.wav'], gsc_estimates_path)

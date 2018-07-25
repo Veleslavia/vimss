@@ -111,17 +111,8 @@ def save_prediction(prediction, estimates_path, sample_rate=22050):
     estimates_dir = estimates_path + os.path.sep + prediction['filename']
     if not os.path.exists(estimates_dir):
         os.makedirs(estimates_dir)
-        os.makedirs(estimates_dir + os.path.sep + 'mix')
         for source_name in range(len(prediction['sources'])):
             os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
-    mix_audio_path = "{basedir}{sep}mix{sep}{sampleid}.wav".format(
-        basedir=estimates_dir,
-        sep=os.path.sep,
-        sampleid="%.4d" % prediction['sample_id']
-    )
-    librosa.output.write_wav(mix_audio_path,
-                             prediction['mix'],
-                             sr=sample_rate)
     for source_name in range(len(prediction['sources'])):
         source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
             basedir=estimates_dir,
