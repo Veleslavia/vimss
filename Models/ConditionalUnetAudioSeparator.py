@@ -86,7 +86,6 @@ class UnetAudioSeparator:
                 enc_outputs.append(current_layer)
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
 
-            print(current_layer.shape)
             current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_initial_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding) # One more conv here since we need to compute features after last decimation
             # Feature map here shall be X along one dimension
 
@@ -106,7 +105,6 @@ class UnetAudioSeparator:
             for i in range(self.num_layers):
                 #UPSAMPLING
                 current_layer = tf.expand_dims(current_layer, axis=1)
-                print(current_layer.shape)
                 if self.upsampling == 'learned':
                     # Learned interpolation between two neighbouring time positions by using a convolution filter of width 2, and inserting the responses in the middle of the two respective inputs
                     current_layer = Utils.learned_interpolation_layer(current_layer, self.padding, i)

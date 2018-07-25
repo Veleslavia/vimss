@@ -93,7 +93,7 @@ def urmp():
     print("Training multi-instrument separation with URMP dataset")
     model_config = {
         "dataset_name": "urmp",
-        "data_path": "gs://vimsstfrecords/urmp-tfrecords-context",
+        "data_path": "gs://vimsstfrecords/urmp-labels",
         "estimates_path": "estimates",
         "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
         "output_type": "difference",
