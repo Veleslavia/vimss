@@ -131,6 +131,7 @@ class URMPInput(object):
 
         if self.use_bfloat16:
             mix = tf.cast(mix, tf.bfloat16)
+            labels = tf.cast(labels, tf.bfloat16)
             sources = tf.cast(sources, tf.bfloat16)
         if not self.is_training:
             features = {'mix': mix, 'filename': parsed['audio/file_basename'],

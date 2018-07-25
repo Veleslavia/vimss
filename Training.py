@@ -176,6 +176,7 @@ def unet_separator(features, labels, mode, params):
             return summary.all_summary_ops()
 
     mix = features['mix']
+    conditioning = features['labels']
     sources = labels
     model_config = params
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
@@ -203,7 +204,9 @@ def unet_separator(features, labels, mode, params):
     separator_func = separator_class.get_output
 
     # Compute loss.
-    separator_sources = tf.stack(separator_func(mix, True, not model_config["raw_audio_loss"], reuse=False), axis=1)
+    separator_sources = tf.stack(separator_func(mix, conditioning,
+                                                True, not model_config["raw_audio_loss"],
+                                                reuse=False), axis=1)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {

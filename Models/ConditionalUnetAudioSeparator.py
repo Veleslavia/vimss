@@ -69,7 +69,7 @@ class UnetAudioSeparator:
         else:
             return [shape[0], shape[1], self.num_channels], [shape[0], shape[1], self.num_channels]
 
-    def get_output(self, input, training=None, return_spectrogram=False, reuse=True):
+    def get_output(self, input, z, training=None, return_spectrogram=False, reuse=True):
         '''
         Creates symbolic computation graph of the U-Net for a given input batch
         :param input: Input batch of mixtures, 3D tensor [batch_size, num_samples, num_channels]
@@ -91,7 +91,7 @@ class UnetAudioSeparator:
 
             print(current_layer.shape)
             # Make conditioning on the bottleneck
-            z = tf.ones((current_layer.shape[0], self.num_sources), tf.bfloat16)
+            # z = tf.ones((current_layer.shape[0], self.num_sources), tf.bfloat16)
             # current_layer.shape[2] - timestamps, current_layer.shape[3] - channels/n_filters
             # z --> [batch_size, num_sources]
             # current_layer --> [batch_size, num_sources, timestamps, n_filters]
