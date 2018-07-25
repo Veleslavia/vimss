@@ -32,7 +32,7 @@ def cfg():
                     "evaluation_steps": 1000,
                     "use_tpu": True,
                     "use_bfloat16": True,
-                    "load_model": False,
+                    "load_model": True,
                     "predict_only": False,
                     "write_audio_summaries": False,
                     "audio_summaries_every_n_steps": 10000,
@@ -346,7 +346,7 @@ def dsd_100_experiment(model_config):
     # Train the Model.
     if model_config['load_model']:
         current_step = estimator._load_global_step_from_checkpoint_dir(
-            model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
+            model_config['model_base_dir'] + os.path.sep +  '579521')
     else:
 
         # Should be an early stopping here, but it will come with tf 1.10
