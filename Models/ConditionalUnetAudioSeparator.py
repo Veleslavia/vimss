@@ -96,13 +96,11 @@ class UnetAudioSeparator:
             # current_layer.shape[2] - timestamps, current_layer.shape[3] - channels/n_filters
             # z --> [batch_size, num_sources]
             # current_layer --> [batch_size, num_sources, timestamps, n_filters]
-            print(z.shape)
             z = tf.tile(z, [current_layer.shape[1], current_layer.shape[2]])
-            z = tf.reshape(z, (8, 9, 312, 13))
-            print(z.shape)
+            z = tf.reshape(z, (current_layer.shape.as_list() + [self.num_sources]))
             current_layer = tf.expand_dims(current_layer, axis=-1)
             current_layer = tf.multiply(z, current_layer)
-            current_layer = tf.reshape(current_layer, (8, 9, 312*13))
+            current_layer = tf.reshape(current_layer, (current_layer.shape[0], current_layer.shape[1], -1))
             print(current_layer.shape)
             # Upconvolution
             for i in range(self.num_layers):
