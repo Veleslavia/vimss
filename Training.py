@@ -8,6 +8,7 @@ from Input import musdb_input
 import Utils
 import Test
 import Models.UnetAudioSeparator
+import Models.ConditionalUnetAudioSeparator
 
 from tensorflow.contrib.cluster_resolver import TPUClusterResolver
 from tensorflow.contrib import summary
@@ -180,7 +181,7 @@ def unet_separator(features, labels, mode, params):
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
 
     with bfloat16.bfloat16_scope():
-        separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
+        separator_class = Models.ConditionalUnetAudioSeparator.UnetAudioSeparator(
             model_config["num_layers"], model_config["num_initial_filters"],
             output_type=model_config["output_type"],
             context=model_config["context"],
