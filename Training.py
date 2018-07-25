@@ -306,7 +306,7 @@ def dsd_100_experiment(model_config):
         zone=os.environ['PROJECT_ZONE'])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
-        model_dir=model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]),
+        model_dir=model_config['model_base_dir'] + os.path.sep + '579521',# str(model_config["experiment_id"]),
         save_checkpoints_steps=500,
         save_summary_steps=250,
         tpu_config=tpu_config.TPUConfig(

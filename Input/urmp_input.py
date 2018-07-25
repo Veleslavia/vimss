@@ -66,7 +66,7 @@ class URMPInput(object):
         #    tf.TensorShape([batch_size])))
         features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
             tf.TensorShape([batch_size])))
-    
+
         print(features)
         print(sources)
 
@@ -101,7 +101,8 @@ class URMPInput(object):
             mix = tf.cast(mix, tf.bfloat16)
             sources = tf.cast(sources, tf.bfloat16)
         if not self.is_training:
-            features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+            features = {'mix': mix,
+                        'sample_id': parsed['audio/sample_idx']}
         else:
             features = {'mix': mix, 'sample_id': parsed['audio/sample_idx']}
         return features, sources

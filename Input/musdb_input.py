@@ -64,8 +64,8 @@ class MusDBInput(object):
         sources.set_shape(sources.get_shape().merge_with(
             tf.TensorShape([batch_size, None, None, None])))
         if not self.is_training:
-            features['filename'].set_shape(features['filename'].get_shape().merge_with(
-                tf.TensorShape([batch_size])))
+            # features['filename'].set_shape(features['filename'].get_shape().merge_with(
+            #     tf.TensorShape([batch_size])))
             features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
                 tf.TensorShape([batch_size])))
 
@@ -101,7 +101,8 @@ class MusDBInput(object):
         if self.is_training:
             features = {'mix': mix}
         else:
-            features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+            features = {'mix': mix,
+                        'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):
