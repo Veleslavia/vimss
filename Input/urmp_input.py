@@ -13,6 +13,24 @@ import functools
 #bn, cl, db, fl, hn, ob, sax, tba, tbn, tbt, va, vc, vn
 CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav', '.stem_fl.wav', '.stem_hn.wav', '.stem_ob.wav',
                  '.stem_sax.wav', '.stem_tba.wav', '.stem_tbn.wav', '.stem_tbt.wav', '.stem_va.wav', '.stem_vc.wav', '.stem_vn.wav']
+
+source_map = {
+    'mix': 0,
+    'bn': 1,
+    'cl': 2,
+    'db': 3,
+    'fl': 4,
+    'hn': 5,
+    'ob': 6,
+    'sax': 7,
+    'tba': 8,
+    'tbn': 9,
+    'tpt': 10,
+    'va': 11,
+    'vc': 12,
+    'vn': 13,
+}
+
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
 MIX_WITH_PADDING = 147443
@@ -88,7 +106,9 @@ class URMPInput(object):
             'audio/channels':
                 tf.FixedLenFeature([], tf.int64, CHANNELS),
             'audio/num_sources':
-                tf.FixedLenFeature([], tf.int64, NUM_SOURCES)
+                tf.FixedLenFeature([], tf.int64, NUM_SOURCES),
+            'audio/source_names':
+                tf.FixedLenFeature([], tf.string, ''),
         }
 
         parsed = tf.parse_single_example(value, keys_to_features)
@@ -97,13 +117,22 @@ class URMPInput(object):
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
+
+        source_names = tf.decode_base64(parsed['audio/source_names']).split(',')
+        labels = [0]*NUM_SOURCES
+        for source in source_names:
+            labels[source_map[source]] = 1
+
         if self.use_bfloat16:
             mix = tf.cast(mix, tf.bfloat16)
             sources = tf.cast(sources, tf.bfloat16)
         if not self.is_training:
-            features = {'mix': mix, 'filename': parsed['audio/file_basename'], 'sample_id': parsed['audio/sample_idx']}
+            features = {'mix': mix, 'filename': parsed['audio/file_basename'],
+                        'sample_id': parsed['audio/sample_idx'], 'labels': labels}
         else:
-            features = {'mix': mix, 'sample_id': parsed['audio/sample_idx']}
+            features = {'mix': mix,
+                        'labels': labels,
+                        'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):

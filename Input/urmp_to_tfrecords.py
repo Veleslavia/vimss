@@ -14,7 +14,7 @@ from google.cloud import storage
 
 
 flags.DEFINE_string(
-    'project', 'jeju-dl', 'Google cloud project id for uploading the dataset.')
+    'project', os.environ["PROJECT_NAME"], 'Google cloud project id for uploading the dataset.')
 flags.DEFINE_string(
     'gcs_output_path', 'gs://urmp-tfrecords-context/urmpv2', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
@@ -49,6 +49,22 @@ CHANNELS = 1            # always work with mono!
 NUM_SOURCES = 13         # fix 4 sources for musdb + mix
 CACHE_SIZE = 16         # load 16 audio files in memory, then shuffle examples and write a tf.record
 
+source_map = {
+    'mix': 0,
+    'bn': 1,
+    'cl': 2,
+    'db': 3,
+    'fl': 4,
+    'hn': 5,
+    'ob': 6,
+    'sax': 7,
+    'tba': 8,
+    'tbn': 9,
+    'tpt': 10,
+    'va': 11,
+    'vc': 12,
+    'vn': 13,
+}
 
 def make_shuffle_idx(n):
     order = list(range(n))
@@ -83,9 +99,9 @@ def _sources_floatlist_feature(value):
     flatten = [item for sublist in value for item in sublist]
     return tf.train.Feature(float_list=tf.train.FloatList(value=flatten))
 
-def _convert_to_example(filename, sample_idx, data_buffer, num_sources,
-                        sample_rate=SAMPLE_RATE, channels=CHANNELS,
-                        num_samples=NUM_SAMPLES):
+
+def _convert_to_example(filename, sample_idx, data_buffer, num_sources, cond_labels,
+                        sample_rate=SAMPLE_RATE, channels=CHANNELS, num_samples=NUM_SAMPLES):
     """Creating a training or testing example. These examples are aggregated later in a batch.
     Each data example should consist of [mix, bass, drums, other, vocals] data and corresponding metadata
     Each data example should have the same input_size (from base 16k to 244k samples), it needs to be fixed.
@@ -95,11 +111,12 @@ def _convert_to_example(filename, sample_idx, data_buffer, num_sources,
     """
     example = tf.train.Example(features=tf.train.Features(feature={
         'audio/file_basename': _bytes_feature("_".join((os.path.basename(filename[0])).split("_")[:3])),
-	    'audio/sample_rate': _int64_feature(sample_rate),
+        'audio/sample_rate': _int64_feature(sample_rate),
         'audio/sample_idx': _int64_feature(sample_idx),
         'audio/num_samples': _int64_feature(num_samples),
         'audio/channels': _int64_feature(channels),
         'audio/num_sources': _int64_feature(num_sources),
+        'audio/cond_labels': _int64_feature(cond_labels),
         'audio/source_names': _bytes_feature(",".join((os.path.basename(filename[0]).replace(".","_")).split("_")[3:-1])),
         'audio/encoded': _sources_floatlist_feature(data_buffer)}))
     return example
@@ -172,11 +189,23 @@ def _process_audio_files_batch(chunk_data):
     chunk_data_cache = [chunk_data_cache[i] for i in shuffle_idx]
 
     for chunk in chunk_data_cache:
-        example = _convert_to_example(filename=chunk[0], sample_idx=chunk[1], data_buffer=chunk[2], num_sources=chunk[3])
+        labels = get_labels_from_filename(chunk[0])
+        example = _convert_to_example(filename=chunk[0], sample_idx=chunk[1],
+                                      data_buffer=chunk[2], num_sources=chunk[3],
+                                      cond_labels=labels)
         writer.write(example.SerializeToString())
 
     writer.close()
     tf.logging.info('Finished writing file: %s' % output_file)
+
+
+def get_labels_from_filename(filename):
+    labels = [0]*len(source_map)
+    label_names = (os.path.basename(filename[0]).replace(".", "_")).split("_")[3:-1]
+    for label_name in label_names:
+        labels[source_map[label_name]] = 1
+    return labels
+
 
 def _process_dataset(filenames,
                      output_directory,
@@ -225,23 +254,6 @@ def get_wav(database_path):
 
     # tracks = [f for r,d,f in os.walk('test')]
     # waves = [os.path.join(database_path, wav) for sub_folders in tracks for wav in sub_folders]
-
-    source_map = {
-        'mix': 0,
-        'bn': 1,
-        'cl': 2,
-        'db': 3,
-        'fl': 4,
-        'hn': 5,
-        'ob': 6,
-        'sax': 7,
-        'tba': 8,
-        'tbn': 9,
-        'tpt': 10,
-        'va': 11,
-        'vc': 12,
-        'vn': 13,
-    }
 
     # Iterate through each tracks
     for folder in os.listdir(database_path):
