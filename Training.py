@@ -332,7 +332,7 @@ def experiment(model_config):
     elif model_config['mode'] == 'predict':
         tf.logging.info("Test results and save predicted sources:")
         predictions = separator.predict(
-            input_fn=urmp_eval.input_fn)
+            input_fn=urmp_test.input_fn)
 
         for prediction in predictions:
             Test.save_prediction(prediction,

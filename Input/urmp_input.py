@@ -82,14 +82,12 @@ class URMPInput(object):
             tf.TensorShape([batch_size, None, None, None])))
         features['labels'].set_shape(features['labels'].get_shape().merge_with(
             tf.TensorShape([batch_size, None])))
-        features['filename'].set_shape(features['filename'].get_shape().merge_with(
-            tf.TensorShape([batch_size])))
-        features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
-            tf.TensorShape([batch_size])))
+        if self.mode == 'predict':
+            features['filename'].set_shape(features['filename'].get_shape().merge_with(
+                tf.TensorShape([batch_size])))
+            features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
+                tf.TensorShape([batch_size])))
     
-        print(features)
-        print(sources)
-
         return features, sources
 
     def dataset_parser(self, value):
