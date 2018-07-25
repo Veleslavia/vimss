@@ -65,8 +65,8 @@ class URMPInput(object):
     transpose_input: 'bool' for whether to use the double transpose trick # what is that??
     """
 
-    def __init__(self, is_training, data_dir, use_bfloat16=False, transpose_input=False):
-        self.is_training = is_training
+    def __init__(self, mode, data_dir, use_bfloat16=False, transpose_input=False):
+        self.mode = mode
         self.use_bfloat16 = use_bfloat16
         self.data_dir = data_dir
         if self.data_dir == 'null' or self.data_dir == '':
@@ -82,8 +82,8 @@ class URMPInput(object):
             tf.TensorShape([batch_size, None, None, None])))
         features['labels'].set_shape(features['labels'].get_shape().merge_with(
             tf.TensorShape([batch_size, None])))
-        #features['filename'].set_shape(features['filename'].get_shape().merge_with(
-        #    tf.TensorShape([batch_size])))
+        features['filename'].set_shape(features['filename'].get_shape().merge_with(
+            tf.TensorShape([batch_size])))
         features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
             tf.TensorShape([batch_size])))
     
@@ -117,29 +117,26 @@ class URMPInput(object):
 
         parsed = tf.parse_single_example(value, keys_to_features)
         audio_data = tf.sparse_tensor_to_dense(parsed['audio/encoded'], default_value=0)
-        #audio_shape = tf.stack([NUM_SOURCES+1, NUM_SAMPLES])
         audio_shape = tf.stack([MIX_WITH_PADDING + NUM_SOURCES*NUM_SAMPLES])
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
 
         labels = tf.sparse_tensor_to_dense(parsed['audio/labels'])
         labels = tf.reshape(labels, tf.stack([NUM_SOURCES]))
-        #source_names = tf.decode_base64(parsed['audio/source_names']).split(',')
-        #labels = [0]*NUM_SOURCES
-        #for source in source_names:
-        #    labels[source_map[source]] = 1
 
         if self.use_bfloat16:
             mix = tf.cast(mix, tf.bfloat16)
             labels = tf.cast(labels, tf.bfloat16)
             sources = tf.cast(sources, tf.bfloat16)
-        if not self.is_training:
+        if self.mode == 'train':
+            features = {'mix': mix,
+                        'labels': labels}
+        elif self.mode == 'eval':
+            features = {'mix': mix,
+                        'labels': labels}
+        else:
             features = {'mix': mix, 'filename': parsed['audio/file_basename'],
                         'sample_id': parsed['audio/sample_idx'], 'labels': labels}
-        else:
-            features = {'mix': mix,
-                        'labels': labels,
-                        'sample_id': parsed['audio/sample_idx']}
         return features, sources
 
     def input_fn(self, params):
@@ -159,10 +156,9 @@ class URMPInput(object):
 
         # Shuffle the filenames to ensure better randomization.
         file_pattern = os.path.join(
-            self.data_dir, 'train-*' if self.is_training else 'test-*')
-        dataset = tf.data.Dataset.list_files(file_pattern, shuffle=self.is_training)
-
-        if self.is_training:
+            self.data_dir, 'train-*' if self.mode == 'train' else 'test-*')
+        dataset = tf.data.Dataset.list_files(file_pattern, shuffle=(self.mode == 'train'))
+        if self.mode == 'train':
             dataset = dataset.repeat()
 
         def fetch_dataset(filename):
@@ -183,18 +179,9 @@ class URMPInput(object):
                 num_parallel_batches=8,    # 8 == num_cores per host
                 drop_remainder=True))
 
-        # Transpose for performance on TPU
-        # TODO what does it do?
-        # if self.transpose_input:
-        #     dataset = dataset.map(
-        #         lambda images, labels: (tf.transpose(images, [1, 2, 3, 0]), labels),
-        #         num_parallel_calls=8)
-
         # Assign static batch size dimension
         dataset = dataset.map(functools.partial(self.set_shapes, batch_size))
 
         # Prefetch overlaps in-feed with training
         dataset = dataset.prefetch(tf.contrib.data.AUTOTUNE)
-        print(type(dataset))
-        print(dataset)
         return dataset

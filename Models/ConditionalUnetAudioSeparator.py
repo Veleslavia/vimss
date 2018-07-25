@@ -89,18 +89,16 @@ class UnetAudioSeparator:
             current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_initial_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding) # One more conv here since we need to compute features after last decimation
             # Feature map here shall be X along one dimension
 
-            print(current_layer.shape)
             # Make conditioning on the bottleneck
-            # z = tf.ones((current_layer.shape[0], self.num_sources), tf.bfloat16)
-            # current_layer.shape[2] - timestamps, current_layer.shape[3] - channels/n_filters
-            # z --> [batch_size, num_sources]
-            # current_layer --> [batch_size, num_sources, timestamps, n_filters]
+            # z --> [batch_size, num_sources] -> [batch_size, timestamps, n_filters, num_sources]
             z = tf.tile(z, [current_layer.shape[1], current_layer.shape[2]])
             z = tf.reshape(z, (current_layer.shape.as_list() + [self.num_sources]))
+
+            # Apply multiplicative conditioning
             current_layer = tf.expand_dims(current_layer, axis=-1)
             current_layer = tf.multiply(z, current_layer)
             current_layer = tf.reshape(current_layer, (current_layer.shape[0], current_layer.shape[1], -1))
-            print(current_layer.shape)
+
             # Upconvolution
             for i in range(self.num_layers):
                 #UPSAMPLING

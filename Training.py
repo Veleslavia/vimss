@@ -4,7 +4,6 @@ import numpy as np
 import os
 
 from Input import urmp_input
-from Input import musdb_input
 import Utils
 import Test
 import Models.UnetAudioSeparator
@@ -23,39 +22,36 @@ ex = Experiment('Conditioned-Waveunet')
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {                    # PRODUCED BY THE TRAINED MODEL TO BE SAVED. Folder itself must exist!
+    model_config = {"mode": 'train_and_eval', # 'predict'
                     "log_dir": "logs", # Base folder for logs files
                     "batch_size": 64, # Batch size
                     "init_sup_sep_lr": 1e-5, # Supervised separator learning rate
-                    "epoch_it" : 2000, # Number of supervised separator steps per epoch
+                    "epoch_it": 2000, # Number of supervised separator steps per epoch
                     "training_steps": 2000*100, # Number of training steps per training
                     "evaluation_steps": 1000,
                     "use_tpu": True,
                     "use_bfloat16": True,
-                    "load_model": False,
+                    "load_model": True,
                     "predict_only": False,
                     "write_audio_summaries": False,
                     "audio_summaries_every_n_steps": 10000,
-                    "num_disc": 5,  # Number of discriminator iterations per separator update
-                    'cache_size' : 16, # Number of audio excerpts that are cached to build batches from
-                    'num_workers' : 6, # Number of processes reading audio and filling up the cache
-                    "duration" : 2, # Duration in seconds of the audio excerpts in the cache. Has to be at least the output length of the network!
-                    'min_replacement_rate' : 16,  # roughly: how many cache entries to replace at least per batch on average. Can be fractional
-                    'num_layers' : 12, # How many U-Net layers
-                    'filter_size' : 15, # For Wave-U-Net: Filter size of conv in downsampling block
-                    'merge_filter_size' : 5, # For Wave-U-Net: Filter size of conv in upsampling block
-                    'num_initial_filters' : 24, # Number of filters for convolution in first layer of network
+                    "decay_steps": 2000,
+                    "decay_rate": 0.96,
+                    'num_layers': 12, # How many U-Net layers
+                    'filter_size': 15, # For Wave-U-Net: Filter size of conv in downsampling block
+                    'merge_filter_size': 5, # For Wave-U-Net: Filter size of conv in upsampling block
+                    'num_initial_filters': 24, # Number of filters for convolution in first layer of network
                     "num_frames": 16384, # DESIRED number of time frames in the output waveform per samples (could be changed when using valid padding)
                     'expected_sr': 22050,  # Downsample all audio input to this sampling rate
                     'mono_downmix': True,  # Whether to downsample the audio input
-                    'output_type' : 'direct', # Type of output layer, either "direct" or "difference". Direct output: Each source is result of tanh activation and independent. DIfference: Last source output is equal to mixture input - sum(all other sources)
-                    'context' : False, # Type of padding for convolutions in separator. If False, feature maps double or half in dimensions after each convolution, and convolutions are padded with zeros ("same" padding). If True, convolution is only performed on the available mixture input, thus the output is smaller than the input
-                    'network' : 'unet', # Type of network architecture, either unet (our model) or unet_spectrogram (Jansson et al 2017 model)
-                    'upsampling' : 'linear', # Type of technique used for upsampling the feature maps in a unet architecture, either 'linear' interpolation or 'learned' filling in of extra samples
-                    'task' : 'voice', # Type of separation task. 'voice' : Separate music into voice and accompaniment. 'multi_instrument': Separate music into guitar, bass, vocals, drums and other (Sisec)
-                    'augmentation' : True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
-                    'raw_audio_loss' : True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
-                    'experiment_id' : np.random.randint(0,1000000)
+                    'output_type': 'direct', # Type of output layer, either "direct" or "difference". Direct output: Each source is result of tanh activation and independent. DIfference: Last source output is equal to mixture input - sum(all other sources)
+                    'context': False, # Type of padding for convolutions in separator. If False, feature maps double or half in dimensions after each convolution, and convolutions are padded with zeros ("same" padding). If True, convolution is only performed on the available mixture input, thus the output is smaller than the input
+                    'network': 'unet', # Type of network architecture, either unet (our model) or unet_spectrogram (Jansson et al 2017 model)
+                    'upsampling': 'linear', # Type of technique used for upsampling the feature maps in a unet architecture, either 'linear' interpolation or 'learned' filling in of extra samples
+                    'task': 'voice', # Type of separation task. 'voice' : Separate music into voice and accompaniment. 'multi_instrument': Separate music into guitar, bass, vocals, drums and other (Sisec)
+                    'augmentation': True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
+                    'raw_audio_loss': True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
+                    'experiment_id': np.random.randint(0,1000000)
                     }
 
     model_config["num_sources"] = 13 if model_config["task"] == "multi_instrument" else 2
@@ -122,9 +118,6 @@ def musdb():
 def baseline_comparison():
     model_config = {
         "batch_size": 4, # Less output since model is so big.
-        # Doesn't matter since the model's output is not dependent on its output or input size (only convolutions)
-        "cache_size": 4,
-        "min_replacement_rate" : 4,
 
         "output_type": "difference",
         "context": True,
@@ -221,14 +214,12 @@ def unet_separator(features, labels, mode, params):
 
     if mode != tf.estimator.ModeKeys.PREDICT:
         global_step = tf.train.get_global_step()
-        decay_steps = model_config['evaluation_steps']*10
-        decay_rate = 0.96
 
         sep_lr = tf.train.exponential_decay(
                      model_config['init_sup_sep_lr'],
                      global_step,
-                     decay_steps,
-                     decay_rate,
+                     model_config['decay_steps'],
+                     model_config['decay_rate'],
                      staircase=False,
                      name=None
                  )
@@ -280,16 +271,11 @@ def unet_separator(features, labels, mode, params):
 
 
 @ex.automain
-def dsd_100_experiment(model_config):
+def experiment(model_config):
+    tf.logging.set_verbosity(tf.logging.INFO)
+    tf.logging.info("SCRIPT START")
 
-    print("SCRIPT START")
-
-    # Create subfolders if they do not exist to save results
-    for dir in [model_config["model_base_dir"], model_config["log_dir"], model_config["estimates_path"]]:
-        if not os.path.exists(dir):
-            os.makedirs(dir)
-
-    print("TPU resolver started")
+    tf.logging.info("TPU resolver started")
 
     tpu_cluster_resolver = TPUClusterResolver(
         tpu=os.environ['TPU_NAME'],
@@ -305,14 +291,14 @@ def dsd_100_experiment(model_config):
             num_shards=8,
             per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
 
-    print("Creating datasets")
-    urmp_train, urmp_eval = [urmp_input.URMPInput(
-        is_training=is_training,
+    tf.logging.info("Creating datasets")
+    urmp_train, urmp_eval, urmp_test = [urmp_input.URMPInput(
+        mode=mode,
         data_dir=model_config['data_path'],
         transpose_input=False,
-        use_bfloat16=model_config['use_bfloat16']) for is_training in [True, False]]
+        use_bfloat16=model_config['use_bfloat16']) for mode in ['train', 'eval', 'test']]
 
-    print("Assigning TPUEstimator")
+    tf.logging.info("Assigning TPUEstimator")
     # Optimize in a +supervised fashion until validation loss worsens
     separator = tpu_estimator.TPUEstimator(
         use_tpu=model_config["use_tpu"],
@@ -324,40 +310,34 @@ def dsd_100_experiment(model_config):
         params={i: model_config[i] for i in model_config if i != 'batch_size'}
     )
 
-    print("Train the model")
-    # Train the Model.
     if model_config['load_model']:
+        tf.logging.info("Load the model")
         current_step = estimator._load_global_step_from_checkpoint_dir(
             model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
-    else:
+
+    if model_config['mode'] == 'train_and_eval':
+        tf.logging.info("Train the model")
         # Should be an early stopping here, but it will come with tf 1.10
-        if model_config['dataset_name'] == 'urmp':
-            separator.train(
-                input_fn=urmp_train.input_fn,
-                steps=model_config['training_steps'])
+        separator.train(
+            input_fn=urmp_train.input_fn,
+            steps=model_config['training_steps'])
 
-    print("Supervised training finished!")
-
-    if not model_config["predict_only"]:
-        print("Evaluate model")
+        tf.logging.info("Supervised training finished!")
+        tf.logging.info("Evaluate model")
         # Evaluate the model.
-        if model_config['dataset_name'] == 'urmp':
-            eval_result = separator.evaluate(
-                input_fn=urmp_eval.input_fn,
-                steps=model_config['evaluation_steps'])
-    else:
-        print("Test results and save predicted sources:")
-        if model_config['dataset_name'] == 'urmp':
-            predictions = separator.predict(
-                input_fn=urmp_eval.input_fn)
+        eval_result = separator.evaluate(
+            input_fn=urmp_eval.input_fn,
+            steps=model_config['evaluation_steps'])
+        tf.logging.info('Evaluation results: %s' % eval_result)
 
-            for prediction in predictions:
-                Test.save_prediction(prediction,
-                                     estimates_path=model_config["estimathes_path"],
-                                     sample_rate=model_config["expected_sr"])
-            Utils.concat_and_upload(model_config["estimates_path"],
-                                    model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
+    elif model_config['mode'] == 'predict':
+        tf.logging.info("Test results and save predicted sources:")
+        predictions = separator.predict(
+            input_fn=urmp_eval.input_fn)
 
-if __name__ == '__main__':
-    tf.logging.set_verbosity(tf.logging.INFO)
-    tf.app.run()
+        for prediction in predictions:
+            Test.save_prediction(prediction,
+                                 estimates_path=model_config["estimathes_path"],
+                                 sample_rate=model_config["expected_sr"])
+        Utils.concat_and_upload(model_config["estimates_path"],
+                                model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
