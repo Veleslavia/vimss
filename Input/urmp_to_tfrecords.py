@@ -16,11 +16,11 @@ from google.cloud import storage
 flags.DEFINE_string(
     'project', os.environ["PROJECT_NAME"], 'Google cloud project id for uploading the dataset.')
 flags.DEFINE_string(
-    'gcs_output_path', 'gs://urmp-tfrecords-context/urmpv2', 'GCS path for uploading the dataset.')
+    'gcs_output_path', 'gs://vimsstfrecords/urmpv2-labels', 'GCS path for uploading the dataset.')
 flags.DEFINE_string(
-    'local_scratch_dir', '/mnt/disk/datasets/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
+    'local_scratch_dir', '/dev/tfrecords/urmpv2', 'Scratch directory path for temporary files.')
 flags.DEFINE_string(
-    'raw_data_dir', '/mnt/disk/datasets/urmpv2', 'Directory path for raw URMP dataset. '
+    'raw_data_dir', '/home/olga/urmpv2', 'Directory path for raw URMP dataset. '
     'Should have train and test subdirectories inside it.')
 
 
@@ -100,7 +100,7 @@ def _sources_floatlist_feature(value):
     return tf.train.Feature(float_list=tf.train.FloatList(value=flatten))
 
 
-def _convert_to_example(filename, sample_idx, data_buffer, num_sources, cond_labels,
+def _convert_to_example(filename, sample_idx, data_buffer, num_sources, labels,
                         sample_rate=SAMPLE_RATE, channels=CHANNELS, num_samples=NUM_SAMPLES):
     """Creating a training or testing example. These examples are aggregated later in a batch.
     Each data example should consist of [mix, bass, drums, other, vocals] data and corresponding metadata
@@ -116,7 +116,7 @@ def _convert_to_example(filename, sample_idx, data_buffer, num_sources, cond_lab
         'audio/num_samples': _int64_feature(num_samples),
         'audio/channels': _int64_feature(channels),
         'audio/num_sources': _int64_feature(num_sources),
-        'audio/cond_labels': _int64_feature(cond_labels),
+        'audio/labels': _int64_feature(labels),
         'audio/source_names': _bytes_feature(",".join((os.path.basename(filename[0]).replace(".","_")).split("_")[3:-1])),
         'audio/encoded': _sources_floatlist_feature(data_buffer)}))
     return example
@@ -192,7 +192,7 @@ def _process_audio_files_batch(chunk_data):
         labels = get_labels_from_filename(chunk[0])
         example = _convert_to_example(filename=chunk[0], sample_idx=chunk[1],
                                       data_buffer=chunk[2], num_sources=chunk[3],
-                                      cond_labels=labels)
+                                      labels=labels)
         writer.write(example.SerializeToString())
 
     writer.close()
@@ -200,10 +200,10 @@ def _process_audio_files_batch(chunk_data):
 
 
 def get_labels_from_filename(filename):
-    labels = [0]*len(source_map)
+    labels = [0]*(len(source_map)-1)
     label_names = (os.path.basename(filename[0]).replace(".", "_")).split("_")[3:-1]
     for label_name in label_names:
-        labels[source_map[label_name]] = 1
+        labels[source_map[label_name]-1] = 1
     return labels
 
 
@@ -243,7 +243,7 @@ def get_wav(database_path):
     """ Iterate through .wav files from URMP dataset
         returns data_list: List[List[path_to_wavefiles]] """
 
-    silence_path = '/mnt/disks/datasets/silence.wav'
+    silence_path = '../silence.wav'
     track_list = []
     # for dir in os.listdir(database_path):
     #     source_list = []
@@ -271,6 +271,7 @@ def get_wav(database_path):
                     track_sources[0] = mix_path
                 else:
                     # Place Sample object mapping to its instrument index
+                    print(filename, filename.split('_'))
                     source_name = filename.split('_')[2]
                     source_idx = source_map[source_name]
                     source_path = os.path.join(database_path, folder, filename)
