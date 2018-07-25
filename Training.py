@@ -30,10 +30,10 @@ def cfg():
                     "epoch_it" : 2000, # Number of supervised separator steps per epoch
                     "training_steps": 2000*100, # Number of training steps per training
                     "evaluation_steps": 1000,
-                    "use_tpu": True,
+                    "use_tpu": False,
                     "use_bfloat16": True,
                     "load_model": True,
-                    "predict_only": False,
+                    "predict_only": True,
                     "write_audio_summaries": False,
                     "audio_summaries_every_n_steps": 10000,
                     "num_disc": 5,  # Number of discriminator iterations per separator update
@@ -94,7 +94,7 @@ def urmp():
     model_config = {
         "dataset_name" : "urmp",
         "data_path": "gs://urmp-tfrecords-context",
-        "estimates_path": "gs://urmpv2-estimates",
+        "estimates_path": "gs://urmpv2-estimates/989518",
         "model_base_dir": "gs://checkpoints/urmpv2-tpu-checkpoints", # Base folder for model checkpoints
         "output_type": "difference",
         "context": True,
@@ -294,19 +294,20 @@ def dsd_100_experiment(model_config):
     print("SCRIPT START")
 
     # Create subfolders if they do not exist to save results
-    for dir in [model_config["model_base_dir"], model_config["log_dir"], model_config["estimates_path"]]:
-        if not os.path.exists(dir):
-            os.makedirs(dir)
+    #for dir in [model_config["model_base_dir"], model_config["log_dir"], model_config["estimates_path"]]:
+    #    print(dir)
+    #    if not os.path.exists(dir):
+    #        os.makedirs(dir)
 
     print("TPU resolver started")
 
     tpu_cluster_resolver = TPUClusterResolver(
-        tpu=os.environ['TPU_NAME'],
-        project=os.environ['PROJECT_NAME'],
-        zone=os.environ['PROJECT_ZONE'])
+        tpu="leo4-tpu", #os.environ['TPU_NAME'],
+        project="jeju-dl", #os.environ['PROJECT_NAME'],
+        zone="us-central1-f") #os.environ['PROJECT_ZONE'])
     config = tpu_config.RunConfig(
         cluster=tpu_cluster_resolver,
-        model_dir=model_config['model_base_dir'] + os.path.sep + '579521',# str(model_config["experiment_id"]),
+        model_dir=model_config['model_base_dir'] + os.path.sep + '989518',# str(model_config["experiment_id"]),
         save_checkpoints_steps=500,
         save_summary_steps=250,
         tpu_config=tpu_config.TPUConfig(
@@ -346,7 +347,7 @@ def dsd_100_experiment(model_config):
     # Train the Model.
     if model_config['load_model']:
         current_step = estimator._load_global_step_from_checkpoint_dir(
-            model_config['model_base_dir'] + os.path.sep +  '579521')
+            model_config['model_base_dir'] + os.path.sep +  '989518')
     else:
 
         # Should be an early stopping here, but it will come with tf 1.10
@@ -411,7 +412,3 @@ def dsd_100_experiment(model_config):
                                          sr=model_config["expected_sr"])
         Utils.concat_and_upload(model_config["estimates_path"],
                                 model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
-
-if __name__ == '__main__':
-    tf.logging.set_verbosity(tf.logging.INFO)
-    tf.app.run()
