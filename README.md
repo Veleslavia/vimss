@@ -65,6 +65,16 @@ Taking as a basis the models proposed in [2] and [3], we would like to
 - [ ] Segmentation and feature estimation tasks from video frames
 - [ ] Writing, dissemination, demo
 
+## Model Architecture
+
+### Wave-U-Net
+### Resnet
+### Feature-wise Transformation (Conditioning)
+
+## Experiments
+
+## Results
+
 ## Team
 
 - *Leo Kim* (@leoybkim),  University of Waterloo 
@@ -75,6 +85,9 @@ Taking as a basis the models proposed in [2] and [3], we would like to
 https://www.overleaf.com/read/mcbhdrvdwbdk
 
 <!--- https://www.overleaf.com/17504652wxkdwdbjpvry --->
+
+## Acknowledgements
+This was supported by [Deep Learning Camp Jeju 2018](http://jeju.dlcamp.org/2018/) which was organized by [TensorFlow Korea User Group](https://facebook.com/groups/TensorFlowKR/).
 
 ## License
 
