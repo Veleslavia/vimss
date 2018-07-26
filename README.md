@@ -62,24 +62,34 @@ The basis of our work stems from the Wave-U-Net [[8]](https://arxiv.org/pdf/1806
     <img src="./img/wave-u-net.png" alt="Wave-U-Net Architecture" width="500px"/>
 </p>
 
-The input to this network is a single channel audio mix, and the desired output is the separated K channels of individual audio sources, where K is the number of sources present in the audio mix. From each 2 to 3 minutes long music tracks, we split them into mini segments of 147443 samples, which comes to about 6 seconds long wav files. Then this input goes through 12 successive layers of 1D convolution down-sampling, where at each layer decimation drops the time resolution by half. At the very bottom of Wave-U-Net, number of sample drops extremely small to about only 9 samples long. Going up the U-Net, instead of using the transposed strided convolutions, linear interpolation is performed for upsampling. This preserves temporal continuity and avoids high-frequency noise in the final result. In other works, people have attempted to zero pad features maps and input before convolving to keep the original dimension size. However, in Wave-U-Net, convolutions are performed without implicit padding due to the aforementioned audio artifacts problem at segment borders. Therefore, our output result is much shorter (16839 samples) than our input (147443 samples) as a price to compute with correct audio context. On our final layer, K convolutional filters are applied the features to extract K separate source outputs.
+The input to this network is a single channel audio mix, and the desired output is the separated K channels of individual audio sources, where K is the number of sources present in the audio mix. From each 2 to 3 minutes long music tracks, we split them into mini segments of 147443 samples, which comes to about 6 seconds long wav files. Then this input goes through 12 successive layers of 1D convolution down-sampling, where at each layer decimation drops the time resolution by half. At the very bottom of Wave-U-Net, number of sample drops extremely small to about only 9 samples long. Going up the U-Net, instead of using the transposed strided convolutions, linear interpolation is performed for upsampling. This preserves temporal continuity and avoids high-frequency noise in the final result. In other works, people have attempted to zero pad features maps and input before convolving to keep the original dimension size. However, in Wave-U-Net, convolutions are performed without implicit padding due to the aforementioned audio artifacts problem at segment borders. Therefore, our output result is much shorter (16839 samples) than our input (147443 samples) as a price to compute with correct audio context. On our final layer, K convolutional filters are applied to the features to extract K separate source outputs.
 
 ### Resnet
 
 ### Feature-wise Transformation (Conditioning)
 
-#### Option 1: Conditioning at every conv layer
+Our problem space using video data involves two different modalities of information:
+1. Audio
+
+2. Images
+
+We want our model to learn by understanding the context of information from images and refer to this while training the audio model. One way to fuse these different sources of information is by applying feature-wise transformation [[10]](https://distill.pub/2018/feature-wise-transformations/). There are different methods to do these transformations and there are different stages where the transformations can be applied.
+
+#### Method 1: Simple concatenation
+#### Method 2: Additive Attention
+#### Method 3: Multiplicative Attention
+
+#### Option 1: Conditioning at every convolutional layer
 #### Option 2: Conditioning at the bottleneck
 #### Option 3: Conditioning at the output layer
 
 ## Experiments
 
-### Batch Size
-#### bfloat16
-### Learning rate
-#### exponential decay
-### Number of sources
-
+* batch size
+* bfloat16
+* learning rate
+* exponential decay
+* number of sources
 
 ## Results
 
@@ -112,7 +122,9 @@ https://www.overleaf.com/read/mcbhdrvdwbdk
 
 [8]. [Daniel Stoller, Sebastian Ewert, Simon Dixon. Wave-U-Net: A Multi-Scale Neural Network for End-to-End Audio Source Separation](https://arxiv.org/pdf/1806.03185.pdf)
 
-[9]. [Olaf Ronneberger, Philipp Fischer, and Thomas Brox, U-Net: Convolutional Networks for Biomedical Image Segmentation](https://arxiv.org/pdf/1505.04597.pdf)
+[9]. [Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-Net: Convolutional Networks for Biomedical Image Segmentation](https://arxiv.org/pdf/1505.04597.pdf)
+
+[10]. [Vincent Dumoulin, Ethan Perez, Nathan Schucher, Florian Strub, Harm de Vries, Aaron Courville, Yoshua Bengio. Feature-wise transformations](https://distill.pub/2018/feature-wise-transformations/)
 
 ## Acknowledgements
 This was supported by [Deep Learning Camp Jeju 2018](http://jeju.dlcamp.org/2018/) which was organized by [TensorFlow Korea User Group](https://facebook.com/groups/TensorFlowKR/).
