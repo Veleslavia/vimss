@@ -49,7 +49,7 @@ Taking as a basis the models proposed in [[2]](https://arxiv.org/pdf/1804.03641.
 - [x] Reproduce Wave-U-Net baseline with MUSDB (GPU/TPU)
 - [x] URMP dataset preprocessing
 - [x] Wave-U-Net extension for URMP dataset (multiple sources)
-- [ ] Wave-U-Net conditioning for URMP dataset (with concatenation || multiplicative/additive attention)
+- [x] Wave-U-Net conditioning for URMP dataset (with concatenation || multiplicative/additive attention)
 - [ ] Segmentation and feature estimation tasks from video frames
 - [ ] Writing, dissemination, demo
 
@@ -68,20 +68,42 @@ The input to this network is a single channel audio mix, and the desired output 
 
 ### Feature-wise Transformation (Conditioning)
 
-Our problem space using video data involves two different modalities of information:
+A significant addition to the source separation pipeline should be aggregation of multiple sources of information. 
+
+Our problem space using video data involves several different modalities of information:
 1. Audio
 
-2. Images
+2. Images (frames)
 
-We want our model to learn by understanding the context of information from images and refer to this while training the audio model. One way to fuse these different sources of information is by applying feature-wise transformation [[10]](https://distill.pub/2018/feature-wise-transformations/). There are different methods to do these transformations and there are different stages where the transformations can be applied.
+3. Temporal evolution in video by optical flow or another advanced model
 
-#### Method 1: Simple concatenation
-#### Method 2: Additive Attention
-#### Method 3: Multiplicative Attention
+4. *Optional* Scores and midi
 
-#### Option 1: Conditioning at every convolutional layer
-#### Option 2: Conditioning at the bottleneck
-#### Option 3: Conditioning at the output layer
+We want our model to learn by understanding the context of information from images and refer to this while training the audio model. 
+One way to fuse these different sources of information is by applying feature-wise transformation [[10]](https://distill.pub/2018/feature-wise-transformations/). 
+There are different methods to do these transformations and there are different stages where the transformations can be applied.
+
+#### Methods
+
+- [ ] Simple concatenation
+- [ ] Additive conditioning
+- [x] Multiplicative conditioning
+
+#### Options
+
+- [ ] Conditioning at every convolutional layer
+- [x] Conditioning at the bottleneck
+- [ ] Conditioning at the output layer
+
+The most naive approach is extracting the labels of instruments which are present in a video and condition source separation with those labels.
+Even though concatenation sounds like the simplest solution, we have little intuition why it should work. 
+We experimented with multiplicative conditioning with ground through labels applying them at the bottleneck of Wave-U-Net.
+It results in a slightly lower but more noisy loss:
+
+<p align="center">
+    <img src="./img/conditioning_vs_pure.png" alt="Loss curve for conditioned Wave-U-Net on URMP dataset" width="500px"/>
+</p>
+
 
 ## Experiments
 
