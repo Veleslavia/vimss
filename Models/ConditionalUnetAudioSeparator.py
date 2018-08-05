@@ -69,7 +69,7 @@ class UnetAudioSeparator:
         else:
             return [shape[0], shape[1], self.num_channels], [shape[0], shape[1], self.num_channels]
 
-    def get_output(self, input, training=None, return_spectrogram=False, reuse=True):
+    def get_output(self, input, z, training=None, return_spectrogram=False, reuse=True):
         '''
         Creates symbolic computation graph of the U-Net for a given input batch
         :param input: Input batch of mixtures, 3D tensor [batch_size, num_samples, num_channels]
@@ -86,13 +86,12 @@ class UnetAudioSeparator:
                 enc_outputs.append(current_layer)
                 current_layer = current_layer[:,::2,:] # Decimate by factor of 2 # out = (in-1)/2 + 1
 
-            print(current_layer.shape)
             current_layer = tf.layers.conv1d(current_layer, self.num_initial_filters + (self.num_initial_filters * self.num_layers),self.filter_size,activation=LeakyReLU,padding=self.padding) # One more conv here since we need to compute features after last decimation
             # Feature map here shall be X along one dimension
 
             print(current_layer.shape)
             # Make conditioning on the bottleneck
-            z = tf.ones((current_layer.shape[0], self.num_sources), tf.bfloat16)
+            # z = tf.ones((current_layer.shape[0], self.num_sources), tf.bfloat16)
             # current_layer.shape[2] - timestamps, current_layer.shape[3] - channels/n_filters
             # z --> [batch_size, num_sources]
             # current_layer --> [batch_size, num_sources, timestamps, n_filters]
@@ -106,7 +105,6 @@ class UnetAudioSeparator:
             for i in range(self.num_layers):
                 #UPSAMPLING
                 current_layer = tf.expand_dims(current_layer, axis=1)
-                print(current_layer.shape)
                 if self.upsampling == 'learned':
                     # Learned interpolation between two neighbouring time positions by using a convolution filter of width 2, and inserting the responses in the middle of the two respective inputs
                     current_layer = Utils.learned_interpolation_layer(current_layer, self.padding, i)

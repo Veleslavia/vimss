@@ -82,6 +82,8 @@ class URMPInput(object):
             tf.TensorShape([batch_size, None, None, None])))
         features['filename'].set_shape(features['filename'].get_shape().merge_with(
             tf.TensorShape([batch_size])))
+        features['labels'].set_shape(features['labels'].get_shape().merge_with(
+            tf.TensorShape([batch_size, None])))
         features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
             tf.TensorShape([batch_size])))
     
@@ -105,6 +107,8 @@ class URMPInput(object):
                 tf.FixedLenFeature([], tf.int64, NUM_SAMPLES),
             'audio/channels':
                 tf.FixedLenFeature([], tf.int64, CHANNELS),
+            'audio/labels':
+                tf.VarLenFeature(tf.int64),
             'audio/num_sources':
                 tf.FixedLenFeature([], tf.int64, NUM_SOURCES),
             'audio/source_names':
@@ -118,13 +122,16 @@ class URMPInput(object):
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])),tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SOURCES, NUM_SAMPLES, CHANNELS]))
 
-        source_names = tf.decode_base64(parsed['audio/source_names']).split(',')
-        labels = [0]*NUM_SOURCES
-        for source in source_names:
-            labels[source_map[source]] = 1
+        labels = tf.sparse_tensor_to_dense(parsed['audio/labels'])
+        labels = tf.reshape(labels, tf.stack([NUM_SOURCES]))
+        #source_names = tf.decode_base64(parsed['audio/source_names']).split(',')
+        #labels = [0]*NUM_SOURCES
+        #for source in source_names:
+        #    labels[source_map[source]] = 1
 
         if self.use_bfloat16:
             mix = tf.cast(mix, tf.bfloat16)
+            labels = tf.cast(labels, tf.bfloat16)
             sources = tf.cast(sources, tf.bfloat16)
         features = {'mix': mix, 'filename': parsed['audio/file_basename'],
                     'sample_id': parsed['audio/sample_idx'], 'labels': labels}
