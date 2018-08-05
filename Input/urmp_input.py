@@ -82,19 +82,18 @@ class URMPInput(object):
             tf.TensorShape([batch_size, None, None, None])))
         features['labels'].set_shape(features['labels'].get_shape().merge_with(
             tf.TensorShape([batch_size, None])))
-        if self.mode == 'predict':
-            features['filename'].set_shape(features['filename'].get_shape().merge_with(
-                tf.TensorShape([batch_size])))
-            features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
-                tf.TensorShape([batch_size])))
-    
+        features['filename'].set_shape(features['filename'].get_shape().merge_with(
+            tf.TensorShape([batch_size])))
+        features['sample_id'].set_shape(features['sample_id'].get_shape().merge_with(
+            tf.TensorShape([batch_size])))
+
         return features, sources
 
     def dataset_parser(self, value):
         """Parse an audio example record from a serialized string Tensor."""
         keys_to_features = {
             'audio/file_basename':
-                tf.FixedLenFeature([], tf.string, ''),
+                tf.FixedLenFeature([], tf.int64, -1),
             'audio/encoded':
                 tf.VarLenFeature(tf.float32),
             'audio/sample_rate':
@@ -125,15 +124,8 @@ class URMPInput(object):
             mix = tf.cast(mix, tf.bfloat16)
             labels = tf.cast(labels, tf.bfloat16)
             sources = tf.cast(sources, tf.bfloat16)
-        if self.mode == 'train':
-            features = {'mix': mix,
-                        'labels': labels}
-        elif self.mode == 'eval':
-            features = {'mix': mix,
-                        'labels': labels}
-        else:
-            features = {'mix': mix, 'filename': parsed['audio/file_basename'],
-                        'sample_id': parsed['audio/sample_idx'], 'labels': labels}
+        features = {'mix': mix, 'filename': parsed['audio/file_basename'],
+                    'sample_id': parsed['audio/sample_idx'], 'labels': labels}
         return features, sources
 
     def input_fn(self, params):
