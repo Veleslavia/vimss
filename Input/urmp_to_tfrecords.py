@@ -109,8 +109,12 @@ def _convert_to_example(filename, sample_idx, data_buffer, num_sources, cond_lab
     data_buffer here is a vector of size num_samples*(num_sources+1), the first channel is always "mix"
 
     """
+    basenames = ['03_Dance', '07_GString', '08_Spring', '10_March', '11_Maria', '12_Spring', '14_Waltz', '15_Surprise', '17_Nocturne', '19_Pavane', '20_Pavane', '21_Rejouissance', '22_Rejouissance', '23_Rejouissance', '25_Pirates', '26_King', '27_King', '29_Fugue', '30_Fugue', '32_Fugue', '33_Elise', '34_Fugue', '36_Rondeau', '37_Rondeau', '38_Jerusalem', '39_Jerusalem', '40_Miserere', '41_Miserere', '43_Chorale', '01_Jupiter', '09_Jesus', '13_Hark', '16_Surprise', '18_Nocturne', '24_Pirates', '28_Fugue', '31_Slavonic', '35_Rondeau', '42_Arioso', '44_K515']
+    file_basename = basenames.index("_".join((os.path.basename(filename[0])).split("_")[:3]))
+
+
     example = tf.train.Example(features=tf.train.Features(feature={
-        'audio/file_basename': _bytes_feature("_".join((os.path.basename(filename[0])).split("_")[:3])),
+        'audio/file_basename': _int64_feature(file_basename),
         'audio/sample_rate': _int64_feature(sample_rate),
         'audio/sample_idx': _int64_feature(sample_idx),
         'audio/num_samples': _int64_feature(num_samples),
