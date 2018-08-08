@@ -94,7 +94,7 @@ class URMPInput(object):
         """Parse an audio example record from a serialized string Tensor."""
         keys_to_features = {
             'audio/file_basename':
-                tf.FixedLenFeature([], tf.string, ''),
+                tf.FixedLenFeature([], tf.int64, -1),
             'audio/encoded':
                 tf.VarLenFeature(tf.float32),
             'audio/sample_rate':

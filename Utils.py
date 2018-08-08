@@ -236,4 +236,4 @@ def concat_and_upload(estimates_path, gsc_estimates_path, sr=22050):
         for name in files:
             os.remove(os.path.join(root, name))
         os.rmdir(root)
-        upload_to_gcs([root+'.wav'], gsc_estimates_path)
+        #upload_to_gcs([root+'.wav'], gsc_estimates_path)

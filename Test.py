@@ -108,7 +108,7 @@ def test(model_config, audio_list, model_folder, load_model):
 
 
 def save_prediction(prediction, estimates_path, sample_rate=22050):
-    estimates_dir = estimates_path + os.path.sep + prediction['filename']
+    estimates_dir = estimates_path + os.path.sep + str(prediction['filename'])
     if not os.path.exists(estimates_dir):
         os.makedirs(estimates_dir)
         for source_name in range(len(prediction['sources'])):
@@ -121,5 +121,5 @@ def save_prediction(prediction, estimates_path, sample_rate=22050):
             sampleid="%.4d" % prediction['sample_id']
         )
         librosa.output.write_wav(source_path,
-                                 prediction['sources'][source_name],
+                                 np.float32(prediction['sources'][source_name]),
                                  sr=sample_rate)
