@@ -209,7 +209,7 @@ def unet_separator(features, labels, mode, params):
             'filename': features['filename'],
             'sample_id': features['sample_id']
         }
-        return tf.estimator.EstimatorSpec(mode, predictions=predictions)
+        return tpu_estimator.TPUEstimatorSpec(mode, predictions=predictions)
 
     separator_loss = tf.cast(tf.reduce_sum(tf.squared_difference(sources, separator_sources)), tf.float32)
 
@@ -289,7 +289,7 @@ def experiment(model_config):
         tpu_config=tpu_config.TPUConfig(
             iterations_per_loop=500,
             num_shards=8,
-            per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V2))  # pylint: disable=line-too-long
+            per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V1))  # pylint: disable=line-too-long
 
     tf.logging.info("Creating datasets")
     urmp_train, urmp_eval, urmp_test = [urmp_input.URMPInput(

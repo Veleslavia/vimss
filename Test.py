@@ -128,12 +128,13 @@ def save_prediction(prediction, output_padding, estimates_path, maps=None, sampl
         for source_id in range(len(prediction['sources'])):
             os.makedirs(estimates_dir + os.path.sep + _get_source_name(source_id))
     for source_id in range(len(prediction['sources'])):
+        source_name = _get_source_name(source_id)
         source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
             basedir=estimates_dir,
             sep=os.path.sep,
-            sname=_get_source_name(source_id),
+            sname=source_name,
             sampleid="%.4d" % prediction['sample_id']
         )
         librosa.output.write_wav(source_path,
-                                 prediction['sources'][source_name][output_padding[0]:-output_padding[1]],
+                                 np.float32(prediction['sources'][source_name][output_padding[0]:-output_padding[1]]),
                                  sr=sample_rate)
