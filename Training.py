@@ -339,6 +339,7 @@ def experiment(model_config):
             Test.save_prediction(prediction,
                                  output_padding=model_config['output_padding'],
                                  estimates_path=model_config["estimates_path"],
+                                 maps=[urmp_input.BASENAMES, urmp_input.SOURCE_MAP],
                                  sample_rate=model_config["expected_sr"])
         gcs_estimates_path = model_config['model_base_dir'] + os.path.sep + \
                              str(model_config["experiment_id"]) + os.path.sep + model_config["estimates_path"]

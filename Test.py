@@ -107,17 +107,31 @@ def test(model_config, audio_list, model_folder, load_model):
     return mean_mse_loss
 
 
-def save_prediction(prediction, output_padding, estimates_path, sample_rate=22050):
-    estimates_dir = estimates_path + os.path.sep + prediction['filename']
+def save_prediction(prediction, output_padding, estimates_path, maps=None, sample_rate=22050):
+    if maps:
+        basenames = maps[0]
+        inv_source_map = {v: k for k, v in maps[1].iteritems()}
+        estimates_dir = estimates_path + os.path.sep + basenames[prediction['filename']]
+    else:
+        inv_source_map = None
+        estimates_dir = estimates_path + os.path.sep + prediction['filename']
+
+    def _get_source_name(_source_id):
+        if inv_source_map:
+            source_name = inv_source_map[_source_id + 1]
+        else:
+            source_name = 'source_' + str(_source_id)
+        return source_name
+
     if not os.path.exists(estimates_dir):
         os.makedirs(estimates_dir)
-        for source_name in range(len(prediction['sources'])):
-            os.makedirs(estimates_dir + os.path.sep + "source_" + str(source_name))
-    for source_name in range(len(prediction['sources'])):
+        for source_id in range(len(prediction['sources'])):
+            os.makedirs(estimates_dir + os.path.sep + _get_source_name(source_id))
+    for source_id in range(len(prediction['sources'])):
         source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
             basedir=estimates_dir,
             sep=os.path.sep,
-            sname=source_name,
+            sname=_get_source_name(source_id),
             sampleid="%.4d" % prediction['sample_id']
         )
         librosa.output.write_wav(source_path,

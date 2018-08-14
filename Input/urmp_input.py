@@ -14,7 +14,7 @@ import functools
 CHANNEL_NAMES = ['.stem_mix.wav', '.stem_bn.wav', '.stem_cl.wav', '.stem_db.wav', '.stem_fl.wav', '.stem_hn.wav', '.stem_ob.wav',
                  '.stem_sax.wav', '.stem_tba.wav', '.stem_tbn.wav', '.stem_tbt.wav', '.stem_va.wav', '.stem_vc.wav', '.stem_vn.wav']
 
-source_map = {
+SOURCE_MAP = {
     'mix': 0,
     'bn': 1,
     'cl': 2,
@@ -30,6 +30,15 @@ source_map = {
     'vc': 12,
     'vn': 13,
 }
+
+BASENAMES = ['03_Dance', '07_GString', '08_Spring', '10_March', '11_Maria',
+             '12_Spring', '14_Waltz', '15_Surprise', '17_Nocturne', '19_Pavane',
+             '20_Pavane', '21_Rejouissance', '22_Rejouissance', '23_Rejouissance',
+             '25_Pirates', '26_King', '27_King', '29_Fugue', '30_Fugue', '32_Fugue',
+             '33_Elise', '34_Fugue', '36_Rondeau', '37_Rondeau', '38_Jerusalem', '39_Jerusalem',
+             '40_Miserere', '41_Miserere', '43_Chorale', '01_Jupiter', '09_Jesus', '13_Hark',
+             '16_Surprise', '18_Nocturne', '24_Pirates', '28_Fugue', '31_Slavonic', '35_Rondeau',
+             '42_Arioso', '44_K515']
 
 SAMPLE_RATE = 22050     # Set a fixed sample rate
 NUM_SAMPLES = 16384     # get from parameters of the model
