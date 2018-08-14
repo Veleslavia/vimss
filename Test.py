@@ -129,7 +129,7 @@ def save_prediction(prediction, output_padding, estimates_path, maps=None, sampl
             os.makedirs(estimates_dir + os.path.sep + _get_source_name(source_id))
     for source_id in range(len(prediction['sources'])):
         source_name = _get_source_name(source_id)
-        source_path = "{basedir}{sep}source_{sname}{sep}{sampleid}.wav".format(
+        source_path = "{basedir}{sep}{sname}{sep}{sampleid}.wav".format(
             basedir=estimates_dir,
             sep=os.path.sep,
             sname=source_name,
