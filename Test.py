@@ -136,5 +136,5 @@ def save_prediction(prediction, output_padding, estimates_path, maps=None, sampl
             sampleid="%.4d" % prediction['sample_id']
         )
         librosa.output.write_wav(source_path,
-                                 np.float32(prediction['sources'][source_name][output_padding[0]:-output_padding[1]]),
+                                 np.float32(prediction['sources'][source_id][output_padding[0]:-output_padding[1]]),
                                  sr=sample_rate)
