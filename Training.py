@@ -22,26 +22,27 @@ ex = Experiment('Conditioned-Waveunet')
 @ex.config
 def cfg():
     # Base configuration
-    model_config = {"mode": 'train_and_eval', # 'predict'
-                    "log_dir": "logs", # Base folder for logs files
-                    "batch_size": 64, # Batch size
-                    "init_sup_sep_lr": 1e-5, # Supervised separator learning rate
-                    "epoch_it": 2000, # Number of supervised separator steps per epoch
-                    "training_steps": 2000*100, # Number of training steps per training
-                    "evaluation_steps": 1000,
-                    "use_tpu": True,
-                    "use_bfloat16": True,
-                    "load_model": True,
-                    "predict_only": False,
-                    "write_audio_summaries": False,
-                    "audio_summaries_every_n_steps": 10000,
-                    "decay_steps": 2000,
-                    "decay_rate": 0.96,
+    model_config = {'mode': 'train_and_eval', # 'predict'
+                    'log_dir': 'logs', # Base folder for logs files
+                    'batch_size': 64, # Batch size
+                    'init_sup_sep_lr': 1e-5, # Supervised separator learning rate
+                    'epoch_it': 2000, # Number of supervised separator steps per epoch
+                    'training_steps': 2000*100, # Number of training steps per training
+                    'evaluation_steps': 1000,
+                    'use_tpu': True,
+                    'use_bfloat16': True,
+                    'load_model': True,
+                    'predict_only': False,
+                    'write_audio_summaries': False,
+                    'audio_summaries_every_n_steps': 10000,
+                    'decay_steps': 2000,
+                    'decay_rate': 0.96,
                     'num_layers': 12, # How many U-Net layers
                     'filter_size': 15, # For Wave-U-Net: Filter size of conv in downsampling block
                     'merge_filter_size': 5, # For Wave-U-Net: Filter size of conv in upsampling block
                     'num_initial_filters': 24, # Number of filters for convolution in first layer of network
                     "num_frames": 16384, # DESIRED number of time frames in the output waveform per samples (could be changed when using valid padding)
+                    'output_padding': [2, 3],
                     'expected_sr': 22050,  # Downsample all audio input to this sampling rate
                     'mono_downmix': True,  # Whether to downsample the audio input
                     'output_type': 'direct', # Type of output layer, either "direct" or "difference". Direct output: Each source is result of tanh activation and independent. DIfference: Last source output is equal to mixture input - sum(all other sources)
@@ -51,7 +52,7 @@ def cfg():
                     'task': 'voice', # Type of separation task. 'voice' : Separate music into voice and accompaniment. 'multi_instrument': Separate music into guitar, bass, vocals, drums and other (Sisec)
                     'augmentation': True, # Random attenuation of source signals to improve generalisation performance (data augmentation)
                     'raw_audio_loss': True, # Only active for unet_spectrogram network. True: L2 loss on audio. False: L1 loss on spectrogram magnitudes for training and validation and test loss
-                    'experiment_id': np.random.randint(0,1000000)
+                    'experiment_id': np.random.randint(0, 1000000)
                     }
 
     model_config["num_sources"] = 13 if model_config["task"] == "multi_instrument" else 2
@@ -191,7 +192,7 @@ def unet_separator(features, labels, mode, params):
     # TODO move this to dataset function
     assert mix.shape[1].value == sep_input_shape[1]
     if mode != tf.estimator.ModeKeys.PREDICT:
-        pad_tensor = tf.constant([[0, 0], [0, 0], [2, 3], [0, 0]])
+        pad_tensor = tf.constant([[0, 0], [0, 0], model_config['output_padding'], [0, 0]])
         sources = tf.pad(sources, pad_tensor, "CONSTANT")
 
     separator_func = separator_class.get_output
@@ -336,7 +337,10 @@ def experiment(model_config):
 
         for prediction in predictions:
             Test.save_prediction(prediction,
-                                 estimates_path=model_config["estimathes_path"],
+                                 output_padding=model_config['output_padding'],
+                                 estimates_path=model_config["estimates_path"],
                                  sample_rate=model_config["expected_sr"])
+        gcs_estimates_path = model_config['model_base_dir'] + os.path.sep + \
+                             str(model_config["experiment_id"]) + os.path.sep + model_config["estimates_path"]
         Utils.concat_and_upload(model_config["estimates_path"],
-                                model_config['model_base_dir'] + os.path.sep + str(model_config["experiment_id"]))
+                                gcs_estimates_path)

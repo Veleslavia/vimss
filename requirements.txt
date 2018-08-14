@@ -1,4 +1,5 @@
 sacred==0.7.3
+tensorflow==1.8.0
 librosa==0.6.1
 scikit-image==0.13.1
 soundfile==0.10.2

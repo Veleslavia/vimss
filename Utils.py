@@ -2,6 +2,7 @@ import os
 import tensorflow as tf
 import numpy as np
 import librosa
+import soundfile as sf
 from google.cloud import storage
 
 
@@ -217,7 +218,8 @@ def upload_to_gcs(filenames, gcs_bucket_path):
     def _upload_files(filenames):
         """Upload a list of files into a specifc subdirectory."""
         for i, filename in enumerate(filenames):
-            blob = bucket.blob(key_prefix + os.path.basename(filename))
+            base_dir = os.path.dirname(filename)
+            blob = bucket.blob(key_prefix + base_dir + '/' + os.path.basename(filename))
             blob.upload_from_filename(filename)
             if not i % 5:
                 tf.logging.info('Finished uploading file: %s' % filename)
@@ -225,15 +227,15 @@ def upload_to_gcs(filenames, gcs_bucket_path):
     _upload_files(filenames)
 
 
-def concat_and_upload(estimates_path, gsc_estimates_path, sr=22050):
+def concat_and_upload(estimates_path, gcs_estimates_path, sr=22050):
 
     for root, dirs, files in os.walk(estimates_path):
         if not files:
             continue
         files.sort()
-        audio_data = np.concatenate([librosa.core.load(os.path.join(root, name))[0] for name in files])
+        audio_data = np.concatenate([sf.read(os.path.join(root, name))[0] for name in files])
         librosa.output.write_wav(root+'.wav', audio_data, sr)
         for name in files:
             os.remove(os.path.join(root, name))
         os.rmdir(root)
-        upload_to_gcs([root+'.wav'], gsc_estimates_path)
+        upload_to_gcs([root+'.wav'], gcs_estimates_path)
