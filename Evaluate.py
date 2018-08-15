@@ -253,7 +253,6 @@ def compute_metrics(config):
             est_sources = np.zeros(shape=gt_sources[:, :, 0].shape)
 
             # lookup estimated sources and load them
-            import ipdb; ipdb.set_trace()
             est_base_dirname = config['estimates_path'] + os.path.sep + urmp_input.BASENAMES[gt_features['filename'][0]]
             inv_source_map = {v: k for k, v in urmp_input.SOURCE_MAP.iteritems()}
             for source_id in range(len(gt_sources)):
@@ -261,8 +260,13 @@ def compute_metrics(config):
                 est_source_filename = os.path.join(est_base_dirname, source_name, "%.4d.wav" % gt_features['sample_id'][0])
                 est_sources[source_id, :] = sf.read(est_source_filename)[0]
 
+            # select only valid sources, metrics are ill-defined for silence
+            valid_sources = gt_features['labels'][0].astype(bool)
+
             # compute mir_eval separation metrics
-            (sdr, sir, sar, _) = mir_eval.separation.bss_eval_sources(gt_sources[:, :, 0], est_sources, compute_permutation=False)
+            (sdr, sir, sar, _) = mir_eval.separation.bss_eval_sources(gt_sources[valid_sources, :, 0],
+                                                                      est_sources[valid_sources, :],
+                                                                      compute_permutation=False)
             metrics[SDR].append(sdr)
             metrics[SIR].append(sir)
             metrics[SAR].append(sar)
