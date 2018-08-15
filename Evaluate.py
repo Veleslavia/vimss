@@ -248,20 +248,21 @@ def compute_metrics(config):
     try:
         while True:
             data_value = sess.run(data_item)
-            gt_features, gt_sources = data_value[0], data_value[1]
+            gt_features, gt_sources = data_value[0], data_value[1][0]
 
-            est_sources = np.zeros(shape=gt_sources.shape)
+            est_sources = np.zeros(shape=gt_sources[:, :, 0].shape)
 
             # lookup estimated sources and load them
-            est_base_dirname = config['estimates_path'] + os.path.sep + urmp_input.BASENAMES[gt_features['filename']]
+            import ipdb; ipdb.set_trace()
+            est_base_dirname = config['estimates_path'] + os.path.sep + urmp_input.BASENAMES[gt_features['filename'][0]]
             inv_source_map = {v: k for k, v in urmp_input.SOURCE_MAP.iteritems()}
             for source_id in range(len(gt_sources)):
                 source_name = inv_source_map[source_id+1]
-                est_source_filename = os.path.join(est_base_dirname, source_name, str(gt_features['sample_id'])+'.wav')
+                est_source_filename = os.path.join(est_base_dirname, source_name, "%.4d.wav" % gt_features['sample_id'][0])
                 est_sources[source_id, :] = sf.read(est_source_filename)[0]
 
             # compute mir_eval separation metrics
-            (sdr, sir, sar, _) = mir_eval.separation.bss_eval_sources(gt_sources, est_sources, compute_permutation=False)
+            (sdr, sir, sar, _) = mir_eval.separation.bss_eval_sources(gt_sources[:, :, 0], est_sources, compute_permutation=False)
             metrics[SDR].append(sdr)
             metrics[SIR].append(sir)
             metrics[SAR].append(sar)
