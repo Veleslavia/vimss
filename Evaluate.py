@@ -1,7 +1,9 @@
+from sacred import Experiment
 import pickle
 import numpy as np
 import tensorflow as tf
 import librosa
+import soundfile as sf
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -11,10 +13,23 @@ import json
 import glob
 
 from Input import Input
+from Input import urmp_input
 import Models.UnetAudioSeparator
 
 import musdb
 import museval
+import mir_eval
+
+ex = Experiment('Evaluate-Metrics')
+
+@ex.config
+def cfg():
+    # Base configuration
+    config = {
+        'data_path': 'gs://vimsstfrecords/urmp-labels',
+        'estimates_path': 'estimates',
+        'experiment_id': np.random.randint(0, 1000000)
+    }
 
 
 def alpha_snr(target, estimate):
@@ -214,3 +229,50 @@ def draw_violin_sdr(json_folder):
 
     fig.set_size_inches(8, 3.)
     fig.savefig("sdr_histogram.pdf", bbox_inches='tight')
+
+@ex.automain
+def compute_metrics(config):
+    sess = tf.Session()
+
+    (SDR, SIR, SAR) = list(range(3))
+    metrics = [list(), list(), list()]
+
+    urmp_test = urmp_input.URMPInput(
+        mode='test',
+        data_dir=config['data_path'],
+        transpose_input=False,
+        use_bfloat16=False).input_fn({'batch_size': 1})
+    data_item = urmp_test.make_one_shot_iterator().get_next()
+
+    # evaluate until StopIteration error
+    try:
+        while True:
+            data_value = sess.run(data_item)
+            gt_features, gt_sources = data_value[0], data_value[1]
+
+            est_sources = np.zeros(shape=gt_sources.shape)
+
+            # lookup estimated sources and load them
+            est_base_dirname = config['estimates_path'] + os.path.sep + urmp_input.BASENAMES[gt_features['filename']]
+            inv_source_map = {v: k for k, v in urmp_input.SOURCE_MAP.iteritems()}
+            for source_id in range(len(gt_sources)):
+                source_name = inv_source_map[source_id+1]
+                est_source_filename = os.path.join(est_base_dirname, source_name, str(gt_features['sample_id'])+'.wav')
+                est_sources[source_id, :] = sf.read(est_source_filename)[0]
+
+            # compute mir_eval separation metrics
+            (sdr, sir, sar, _) = mir_eval.separation.bss_eval_sources(gt_sources, est_sources, compute_permutation=False)
+            metrics[SDR].append(sdr)
+            metrics[SIR].append(sir)
+            metrics[SAR].append(sar)
+
+    except StopIteration:
+        print("Metrics computed")
+
+    print("Mean SDR: ", np.mean(metrics[SDR]))
+    print("Mean SIR: ", np.mean(metrics[SIR]))
+    print("Mean SAR: ", np.mean(metrics[SAR]))
+
+    metrics_data_path = os.path.join(config['estimates_path'], 'metrics.npy')
+    np.save(metrics_data_path, np.array(metrics))
+    print("Metrics saved at ", metrics_data_path)
