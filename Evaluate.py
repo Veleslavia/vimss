@@ -279,9 +279,9 @@ def compute_metrics(config):
     except:
         print("Metrics computed")
 
-    print("Mean SDR: ", np.mean(metrics[SDR]))
-    print("Mean SIR: ", np.mean(metrics[SIR]))
-    print("Mean SAR: ", np.mean(metrics[SAR]))
+    print("Mean SDR: ", np.concatenate(metrics[SDR]).ravel().mean())
+    print("Mean SIR: ", np.concatenate(metrics[SIR]).ravel().mean())
+    print("Mean SAR: ", np.concatenate(metrics[SAR]).ravel().mean())
 
     metrics_data_path = os.path.join(config['estimates_path'], 'metrics.npy')
     np.save(metrics_data_path, np.array(metrics))
