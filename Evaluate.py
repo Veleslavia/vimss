@@ -255,10 +255,15 @@ def compute_metrics(config):
             # lookup estimated sources and load them
             est_base_dirname = config['estimates_path'] + os.path.sep + urmp_input.BASENAMES[gt_features['filename'][0]]
             inv_source_map = {v: k for k, v in urmp_input.SOURCE_MAP.iteritems()}
-            for source_id in range(len(gt_sources)):
-                source_name = inv_source_map[source_id+1]
-                est_source_filename = os.path.join(est_base_dirname, source_name, "%.4d.wav" % gt_features['sample_id'][0])
-                est_sources[source_id, :] = sf.read(est_source_filename)[0]
+            try:
+                for source_id in range(len(gt_sources)):
+                    source_name = inv_source_map[source_id+1]
+                    est_source_filename = os.path.join(est_base_dirname, source_name, "%.4d.wav" % gt_features['sample_id'][0])
+                    est_sources[source_id, :] = sf.read(est_source_filename)[0]
+            except:
+                print("Couldn't read file ", est_source_filename)
+                continue
+
 
             # select only valid sources, metrics are ill-defined for silence
             valid_sources = gt_features['labels'][0].astype(bool)
@@ -271,7 +276,7 @@ def compute_metrics(config):
             metrics[SIR].append(sir)
             metrics[SAR].append(sar)
 
-    except StopIteration:
+    except:
         print("Metrics computed")
 
     print("Mean SDR: ", np.mean(metrics[SDR]))
