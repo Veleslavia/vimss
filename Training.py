@@ -17,12 +17,13 @@ from tensorflow.contrib.tpu.python.tpu import tpu_optimizer
 from tensorflow.contrib.tpu.python.tpu import bfloat16
 from tensorflow.python.estimator import estimator
 
-ex = Experiment('Conditioned-Waveunet')
+ex = Experiment('Waveunet')
 
 @ex.config
 def cfg():
     # Base configuration
     model_config = {'mode': 'train_and_eval', # 'predict'
+                    'conditioned': False,
                     'log_dir': 'logs', # Base folder for logs files
                     'batch_size': 64, # Batch size
                     'init_sup_sep_lr': 1e-5, # Supervised separator learning rate
@@ -176,15 +177,26 @@ def unet_separator(features, labels, mode, params):
     disc_input_shape = [model_config["batch_size"], model_config["num_frames"], 0]
 
     with bfloat16.bfloat16_scope():
-        separator_class = Models.ConditionalUnetAudioSeparator.UnetAudioSeparator(
-            model_config["num_layers"], model_config["num_initial_filters"],
-            output_type=model_config["output_type"],
-            context=model_config["context"],
-            mono=model_config["mono_downmix"],
-            upsampling=model_config["upsampling"],
-            num_sources=model_config["num_sources"],
-            filter_size=model_config["filter_size"],
-            merge_filter_size=model_config["merge_filter_size"])
+        if model_config['conditioned']:
+            separator_class = Models.ConditionalUnetAudioSeparator.UnetAudioSeparator(
+                model_config["num_layers"], model_config["num_initial_filters"],
+                output_type=model_config["output_type"],
+                context=model_config["context"],
+                mono=model_config["mono_downmix"],
+                upsampling=model_config["upsampling"],
+                num_sources=model_config["num_sources"],
+                filter_size=model_config["filter_size"],
+                merge_filter_size=model_config["merge_filter_size"])
+        else:
+            separator_class = Models.UnetAudioSeparator.UnetAudioSeparator(
+                model_config["num_layers"], model_config["num_initial_filters"],
+                output_type=model_config["output_type"],
+                context=model_config["context"],
+                mono=model_config["mono_downmix"],
+                upsampling=model_config["upsampling"],
+                num_sources=model_config["num_sources"],
+                filter_size=model_config["filter_size"],
+                merge_filter_size=model_config["merge_filter_size"])
 
     sep_input_shape, sep_output_shape = separator_class.get_padding(np.array(disc_input_shape))
 
@@ -198,9 +210,13 @@ def unet_separator(features, labels, mode, params):
     separator_func = separator_class.get_output
 
     # Compute loss.
-    separator_sources = tf.stack(separator_func(mix, conditioning,
-                                                True, not model_config["raw_audio_loss"],
-                                                reuse=False), axis=1)
+    if model_config['conditioned']:
+        separator_sources = tf.stack(separator_func(mix, conditioning,
+                                                    True, not model_config["raw_audio_loss"],
+                                                    reuse=False), axis=1)
+    else:
+        separator_sources = tf.stack(separator_func(mix, True, not model_config["raw_audio_loss"],
+                                                    reuse=False), axis=1)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {
