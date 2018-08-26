@@ -4,6 +4,7 @@ import numpy as np
 import os
 
 from Input import urmp_input
+from Input import sopjfm_input
 import Utils
 import Test
 import Models.UnetAudioSeparator
@@ -323,11 +324,20 @@ def experiment(model_config):
             per_host_input_for_training=tpu_config.InputPipelineConfig.PER_HOST_V1))  # pylint: disable=line-too-long
 
     tf.logging.info("Creating datasets")
-    urmp_train, urmp_eval, urmp_test = [urmp_input.URMPInput(
-        mode=mode,
-        data_dir=model_config['data_path'],
-        transpose_input=False,
-        use_bfloat16=model_config['use_bfloat16']) for mode in ['train', 'eval', 'test']]
+    if model_config['dataset_name'] == 'urmp':
+        ds_train, ds_eval, ds_test = [urmp_input.URMPInput(
+            mode=mode,
+            data_dir=model_config['data_path'],
+            transpose_input=False,
+            use_bfloat16=model_config['use_bfloat16']) for mode in ['train', 'eval', 'test']]
+    elif model_config['dataset_name'] == 'sopjfm':
+        ds_train, ds_eval, ds_test = [sopjfm_input.SOPInput(
+            mode=mode,
+            data_dir=model_config['data_path'],
+            transpose_input=False,
+            use_bfloat16=model_config['use_bfloat16']) for mode in ['train', 'eval', 'test']]
+    else:
+        raise NotImplementedError
 
     tf.logging.info("Assigning TPUEstimator")
     # Optimize in a +supervised fashion until validation loss worsens
@@ -350,21 +360,21 @@ def experiment(model_config):
         tf.logging.info("Train the model")
         # Should be an early stopping here, but it will come with tf 1.10
         separator.train(
-            input_fn=urmp_train.input_fn,
+            input_fn=ds_train.input_fn,
             steps=model_config['training_steps'])
 
         tf.logging.info("Supervised training finished!")
         tf.logging.info("Evaluate model")
         # Evaluate the model.
         eval_result = separator.evaluate(
-            input_fn=urmp_eval.input_fn,
+            input_fn=ds_eval.input_fn,
             steps=model_config['evaluation_steps'])
         tf.logging.info('Evaluation results: %s' % eval_result)
 
     elif model_config['mode'] == 'predict':
         tf.logging.info("Test results and save predicted sources:")
         predictions = separator.predict(
-            input_fn=urmp_test.input_fn)
+            input_fn=ds_test.input_fn)
 
         for prediction in predictions:
             Test.save_prediction(prediction,
