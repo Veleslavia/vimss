@@ -117,7 +117,7 @@ class SOPInput(object):
         # TODO fix it
         filename = tf.constant(0, tf.float32)
         sample_id = features1['sample_id']
-        labels = tf.bitwise.bitwise_or(features1['labels'], features1['labels'])
+        labels = tf.cast(tf.bitwise.bitwise_or(features1['labels'], features2['labels']), tf.uint8)
         labels = tf.divide(tf.reshape(tf.bitwise.bitwise_and(labels, bits), [-1]), bits)
 
         sources = tf.stack([sources1, sources2])
@@ -147,7 +147,7 @@ class SOPInput(object):
             'audio/channels':
                 tf.FixedLenFeature([], tf.int64, CHANNELS),
             'audio/labels':
-                tf.VarLenFeature(tf.int64),
+                tf.FixedLenFeature([], tf.int64, -1),
             'audio/num_sources':
                 tf.FixedLenFeature([], tf.int64, NUM_SOURCES),
             'audio/source_names':
@@ -160,7 +160,7 @@ class SOPInput(object):
         audio_data = tf.reshape(audio_data, audio_shape)
         mix, sources = tf.reshape(audio_data[:MIX_WITH_PADDING], tf.stack([MIX_WITH_PADDING, CHANNELS])), \
                        tf.reshape(audio_data[MIX_WITH_PADDING:], tf.stack([NUM_SAMPLES, CHANNELS]))
-        labels = parsed['audio/labels']
+        labels = tf.cast(parsed['audio/labels'], tf.int16)
         # labels = tf.sparse_tensor_to_dense(parsed['audio/labels'])
         # labels = tf.reshape(labels, tf.stack([NUM_SOURCES]))
 
@@ -196,11 +196,7 @@ class SOPInput(object):
                     fetch_dataset, cycle_length=6, sloppy=True))
             _dataset = _dataset.shuffle(1024, reshuffle_each_iteration=True)
             # Parse, preprocess, and batch the data in parallel
-            _dataset = _dataset.apply(
-                tf.contrib.data.map_and_batch(
-                    dataset_parser, batch_size=batch_size,
-                    num_parallel_batches=8,    # 8 == num_cores per host
-                    drop_remainder=True))
+            _dataset = _dataset.map(dataset_parser)
 
             return _dataset
 
@@ -221,7 +217,12 @@ class SOPInput(object):
         dataset = tf.data.Dataset.zip((dataset1, dataset2))
 
         # Apply mapping to create a sum of sources
-        dataset = dataset.map(self.combine_sources)
+        dataset = dataset.apply(
+                tf.contrib.data.map_and_batch(
+                    self.combine_sources,
+                    batch_size=batch_size,
+                    num_parallel_batches=8,    # 8 == num_cores per host
+                    drop_remainder=True))
 
         # Assign static batch size dimension
         dataset = dataset.map(functools.partial(self.set_shapes, batch_size))
