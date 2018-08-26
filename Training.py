@@ -129,6 +129,21 @@ def baseline_comparison():
         "num_initial_filters" : 34
     }
 
+@ex.named_config
+def sop():
+    print("Training multi-instrument separation with URMP dataset")
+    model_config = {
+        "dataset_name": "sopjfm",
+        "data_path": "gs://vimsstfrecords/sopjfm",
+        "estimates_path": "estimates",
+        "model_base_dir": "gs://vimsscheckpoints", # Base folder for model checkpoints
+        "output_type": "difference",
+        "context": True,
+        "upsampling": "linear",
+        "mono_downmix": True,
+        "task": "sop_duets"
+    }
+
 @ex.capture
 def unet_separator(features, labels, mode, params):
 

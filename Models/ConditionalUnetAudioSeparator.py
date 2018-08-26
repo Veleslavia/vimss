@@ -90,9 +90,10 @@ class UnetAudioSeparator:
             # Feature map here shall be X along one dimension
 
             # Make conditioning on the bottleneck
-            # z --> [batch_size, num_sources] -> [batch_size, timestamps, n_filters, num_sources]
+            # z --> [batch_size, num_labels] -> [batch_size, timestamps, n_filters, num_labels]
+            num_labels = z.shape.as_list()[-1]
             z = tf.tile(z, [current_layer.shape[1], current_layer.shape[2]])
-            z = tf.reshape(z, (current_layer.shape.as_list() + [self.num_sources]))
+            z = tf.reshape(z, (current_layer.shape.as_list() + [num_labels]))
 
             # Apply multiplicative conditioning
             current_layer = tf.expand_dims(current_layer, axis=-1)
