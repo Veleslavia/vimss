@@ -150,6 +150,7 @@ https://www.overleaf.com/read/mcbhdrvdwbdk
 
 ## Acknowledgements
 This was supported by [Deep Learning Camp Jeju 2018](http://jeju.dlcamp.org/2018/) which was organized by [TensorFlow Korea User Group](https://facebook.com/groups/TensorFlowKR/).
+Olga also acknowledges support from the Spanish Ministry of Economy and Competitiveness under the Maria de Maeztu Units of Excellence Programme (MDM-2015-0502).
 
 ## License
 
